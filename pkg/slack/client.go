@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -414,15 +415,15 @@ const PollInterval = 3 * time.Second
 
 // Channel represents a Slack channel for listing.
 type Channel struct {
-	ID       string
-	Name     string
-	Type     string  // "channel", "group", "mpim"
-	Priority float64 // Slack sidebar priority (higher = more important)
+	ID           string
+	Name         string
+	Type         string  // "channel", "group", "mpim"
+	LastActivity float64 // unix timestamp of last message
 }
 
-// ListChannels returns channels the user is a member of, sorted by recent
-// activity and filtered to the last 30 days. IMs are resolved to user names.
-// The optional progress callback is called with the running count after each API page.
+// ListChannels returns channels the user is a member of that had activity
+// in the last 30 days, sorted by most recent first.
+// The optional progress callback is called with status updates.
 func (c *Client) ListChannels(progress func(n int)) ([]Channel, error) {
 	params := &slackapi.GetConversationsForUserParameters{
 		Types:           []string{"public_channel", "private_channel", "mpim"},
@@ -430,7 +431,11 @@ func (c *Client) ListChannels(progress func(n int)) ([]Channel, error) {
 		ExcludeArchived: true,
 	}
 
-	var result []Channel
+	// Collect all candidate channels
+	type candidate struct {
+		id, name, chType string
+	}
+	var candidates []candidate
 	for {
 		channels, cursor, err := c.api.GetConversationsForUser(params)
 		if err != nil {
@@ -448,15 +453,10 @@ func (c *Client) ListChannels(progress func(n int)) ([]Channel, error) {
 			if name == "" {
 				name = ch.ID
 			}
-			result = append(result, Channel{
-				ID:       ch.ID,
-				Name:     name,
-				Type:     chType,
-				Priority: ch.Priority,
-			})
+			candidates = append(candidates, candidate{ch.ID, name, chType})
 		}
 		if progress != nil {
-			progress(len(result))
+			progress(len(candidates))
 		}
 		if cursor == "" {
 			break
@@ -464,12 +464,57 @@ func (c *Client) ListChannels(progress func(n int)) ([]Channel, error) {
 		params.Cursor = cursor
 	}
 
-	// Sort by Slack's sidebar priority (higher = more recent/important)
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].Priority > result[j].Priority
+	// Fetch last message timestamp for each channel concurrently
+	type indexedResult struct {
+		idx int
+		ch  Channel
+		ok  bool
+	}
+	cutoff := float64(time.Now().Add(-30 * 24 * time.Hour).Unix())
+	results := make(chan indexedResult, len(candidates))
+
+	// Limit concurrency to 10 to avoid rate limits
+	sem := make(chan struct{}, 10)
+	for i, cand := range candidates {
+		sem <- struct{}{}
+		go func(i int, cand candidate) {
+			defer func() { <-sem }()
+			hist, err := c.api.GetConversationHistory(&slackapi.GetConversationHistoryParameters{
+				ChannelID: cand.id,
+				Limit:     1,
+			})
+			if err != nil || hist == nil || len(hist.Messages) == 0 {
+				results <- indexedResult{idx: i}
+				return
+			}
+			ts, _ := strconv.ParseFloat(hist.Messages[0].Timestamp, 64)
+			if ts < cutoff {
+				results <- indexedResult{idx: i}
+				return
+			}
+			results <- indexedResult{
+				idx: i,
+				ch:  Channel{ID: cand.id, Name: cand.name, Type: cand.chType, LastActivity: ts},
+				ok:  true,
+			}
+		}(i, cand)
+	}
+
+	// Collect results
+	var active []Channel
+	for range candidates {
+		r := <-results
+		if r.ok {
+			active = append(active, r.ch)
+		}
+	}
+
+	// Sort by most recent first
+	sort.Slice(active, func(i, j int) bool {
+		return active[i].LastActivity > active[j].LastActivity
 	})
 
-	return result, nil
+	return active, nil
 }
 
 // LiveThinking manages a live-updating thinking indicator in Slack.
