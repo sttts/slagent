@@ -410,6 +410,40 @@ func (c *Client) resolveUser(userID string) string {
 	return name
 }
 
+// ResolveUserChannel looks up a user by name/display name and opens a DM channel.
+// The input can be "@username" or just "username".
+func (c *Client) ResolveUserChannel(name string) (string, error) {
+	name = strings.TrimPrefix(name, "@")
+
+	// Search for the user by listing all users (Slack has no lookup-by-name API for session tokens)
+	users, err := c.api.GetUsers()
+	if err != nil {
+		return "", fmt.Errorf("list users: %w", err)
+	}
+
+	var userID string
+	for _, u := range users {
+		if strings.EqualFold(u.Name, name) ||
+			strings.EqualFold(u.Profile.DisplayName, name) ||
+			strings.EqualFold(u.RealName, name) {
+			userID = u.ID
+			break
+		}
+	}
+	if userID == "" {
+		return "", fmt.Errorf("user %q not found", name)
+	}
+
+	// Open a DM conversation with the user
+	ch, _, _, err := c.api.OpenConversation(&slackapi.OpenConversationParameters{
+		Users: []string{userID},
+	})
+	if err != nil {
+		return "", fmt.Errorf("open DM with %q: %w", name, err)
+	}
+	return ch.ID, nil
+}
+
 // PollInterval is the recommended interval between PollReplies calls.
 const PollInterval = 3 * time.Second
 
@@ -429,23 +463,18 @@ type ListProgress struct {
 
 // ListChannels returns channels the user is a member of.
 // Channels/groups are always included. Group DMs (mpim) are filtered
-// to those with activity in the last 30 days. If includeIMs is true,
-// 1:1 DMs with recent activity are also included.
-func (c *Client) ListChannels(progress func(ListProgress), includeIMs bool) ([]Channel, error) {
-	types := []string{"public_channel", "private_channel", "mpim"}
-	if includeIMs {
-		types = append(types, "im")
-	}
+// to those with activity in the last 30 days.
+func (c *Client) ListChannels(progress func(ListProgress)) ([]Channel, error) {
 	params := &slackapi.GetConversationsForUserParameters{
-		Types:           types,
+		Types:           []string{"public_channel", "private_channel", "mpim"},
 		Limit:           200,
 		ExcludeArchived: true,
 	}
 
 	// Phase 1: collect all conversations
 	type candidate struct {
-		id, name, chType string
-		members          []string
+		id, name string
+		members  []string
 	}
 	var result []Channel
 	var dmsToCheck []candidate
@@ -455,12 +484,9 @@ func (c *Client) ListChannels(progress func(ListProgress), includeIMs bool) ([]C
 			return nil, fmt.Errorf("get conversations: %w", err)
 		}
 		for _, ch := range convs {
-			switch {
-			case ch.IsMpIM:
-				dmsToCheck = append(dmsToCheck, candidate{ch.ID, ch.Name, "mpim", ch.Members})
-			case ch.IsIM:
-				dmsToCheck = append(dmsToCheck, candidate{ch.ID, ch.Name, "im", []string{ch.User}})
-			default:
+			if ch.IsMpIM {
+				dmsToCheck = append(dmsToCheck, candidate{ch.ID, ch.Name, ch.Members})
+			} else {
 				chType := "channel"
 				if ch.IsPrivate {
 					chType = "group"
@@ -506,7 +532,7 @@ func (c *Client) ListChannels(progress func(ListProgress), includeIMs bool) ([]C
 				}
 				name := c.resolveMemberNames(cand.members)
 				results <- dmResult{
-					ch: Channel{ID: cand.id, Name: name, Type: cand.chType},
+					ch: Channel{ID: cand.id, Name: name, Type: "mpim"},
 					ok: true,
 				}
 			}(cand)

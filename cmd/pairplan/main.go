@@ -45,6 +45,7 @@ func cmdStart() {
 	}
 
 	// Parse flags
+	var targetUser string
 	args := os.Args[2:]
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -52,6 +53,11 @@ func cmdStart() {
 			i++
 			if i < len(args) {
 				cfg.Channel = args[i]
+			}
+		case "--user", "-u":
+			i++
+			if i < len(args) {
+				targetUser = args[i]
 			}
 		case "--topic", "-t":
 			i++
@@ -70,6 +76,22 @@ func cmdStart() {
 				i = len(args)
 			}
 		}
+	}
+
+	// Resolve --user to a DM channel
+	if targetUser != "" && cfg.Channel == "" {
+		client, err := pslack.New("")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		chID, err := client.ResolveUserChannel(targetUser)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error resolving user: %v\n", err)
+			os.Exit(1)
+		}
+		cfg.Channel = chID
+		fmt.Fprintf(os.Stderr, "Resolved @%s → %s\n", targetUser, chID)
 	}
 
 	// If no channel given, prompt with channel list when credentials exist
@@ -95,7 +117,7 @@ func promptChannel() string {
 		return ""
 	}
 
-	channels, err := client.ListChannels(slackProgress, false)
+	channels, err := client.ListChannels(slackProgress)
 	fmt.Fprint(os.Stderr, "\r\033[K")
 	if err != nil || len(channels) == 0 {
 		return ""
@@ -300,21 +322,13 @@ func cmdAuthExtract() {
 }
 
 func cmdChannels() {
-	// Check for --all flag to include 1:1 DMs
-	includeIMs := false
-	for _, arg := range os.Args[2:] {
-		if arg == "--all" {
-			includeIMs = true
-		}
-	}
-
 	client, err := pslack.New("")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
-	channels, err := client.ListChannels(slackProgress, includeIMs)
+	channels, err := client.ListChannels(slackProgress)
 	fmt.Fprint(os.Stderr, "\r\033[K")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error listing channels: %v\n", err)
@@ -343,8 +357,8 @@ func printUsage() {
 	fmt.Println(`pairplan — Mirror Claude Code planning sessions to Slack
 
 Usage:
-  pairplan start [--channel C] [--topic "what we're planning"]
-      Start a planning session. Mirrors to Slack if --channel is given.
+  pairplan start [--channel C] [--user @name] [--topic "what we're planning"]
+      Start a planning session. Mirrors to Slack if --channel or --user is given.
 
   pairplan auth
       Set up Slack token (paste xoxb-/xoxp- token).
@@ -352,8 +366,8 @@ Usage:
   pairplan auth --extract
       Auto-extract session token from local Slack desktop app.
 
-  pairplan channels [--all]
-      List your Slack channels and group DMs. Use --all to include 1:1 DMs.
+  pairplan channels
+      List your Slack channels and group DMs.
 
   pairplan share <plan-file> --channel C
       Post a plan file to Slack for review.
