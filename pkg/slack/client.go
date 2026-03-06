@@ -444,13 +444,73 @@ func (c *Client) ResolveChannelByName(name string) (string, error) {
 	return "", fmt.Errorf("channel %q not found", name)
 }
 
+// cachedUser is a minimal user record for the on-disk cache.
+type cachedUser struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name,omitempty"`
+	RealName    string `json:"real_name,omitempty"`
+}
+
+type usersCache struct {
+	FetchedAt time.Time    `json:"fetched_at"`
+	Users     []cachedUser `json:"users"`
+}
+
+const usersCacheTTL = 1 * time.Hour
+
+func usersCachePath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "pairplan", "users-cache.json")
+}
+
+// loadUsersCache returns cached users if the cache is fresh.
+func loadUsersCache() ([]cachedUser, bool) {
+	data, err := os.ReadFile(usersCachePath())
+	if err != nil {
+		return nil, false
+	}
+	var cache usersCache
+	if json.Unmarshal(data, &cache) != nil {
+		return nil, false
+	}
+	if time.Since(cache.FetchedAt) > usersCacheTTL {
+		return nil, false
+	}
+	return cache.Users, true
+}
+
+// saveUsersCache writes the users cache to disk.
+func saveUsersCache(users []cachedUser) {
+	cache := usersCache{FetchedAt: time.Now(), Users: users}
+	data, err := json.Marshal(cache)
+	if err != nil {
+		return
+	}
+	os.WriteFile(usersCachePath(), data, 0o600)
+}
+
 // ResolveUserChannel looks up a user by name and opens a DM channel.
 // The input can be "@username" or just "username".
+// Uses a 1-hour on-disk cache to avoid re-fetching the full user list.
 func (c *Client) ResolveUserChannel(name string) (string, error) {
 	name = strings.TrimPrefix(name, "@")
 
-	// Paginate users.list with large pages, break on first match
+	// Try cache first
+	if users, ok := loadUsersCache(); ok {
+		for _, u := range users {
+			if strings.EqualFold(u.Name, name) ||
+				strings.EqualFold(u.DisplayName, name) ||
+				strings.EqualFold(u.RealName, name) {
+				return c.openDM(name, u.ID)
+			}
+		}
+		return "", fmt.Errorf("user %q not found", name)
+	}
+
+	// Fetch all users, cache them, then search
 	ctx := context.Background()
+	var all []cachedUser
 	var userID string
 	pager := c.api.GetUsersPaginated(slackapi.GetUsersOptionLimit(1000))
 	for {
@@ -462,22 +522,32 @@ func (c *Client) ResolveUserChannel(name string) (string, error) {
 			break
 		}
 		for _, u := range pager.Users {
-			if strings.EqualFold(u.Name, name) ||
-				strings.EqualFold(u.Profile.DisplayName, name) ||
-				strings.EqualFold(u.RealName, name) {
+			cu := cachedUser{
+				ID:          u.ID,
+				Name:        u.Name,
+				DisplayName: u.Profile.DisplayName,
+				RealName:    u.RealName,
+			}
+			all = append(all, cu)
+			if userID == "" &&
+				(strings.EqualFold(u.Name, name) ||
+					strings.EqualFold(u.Profile.DisplayName, name) ||
+					strings.EqualFold(u.RealName, name)) {
 				userID = u.ID
-				break
 			}
 		}
-		if userID != "" {
-			break
-		}
 	}
+
+	// Always save the full list for next time
+	saveUsersCache(all)
+
 	if userID == "" {
 		return "", fmt.Errorf("user %q not found", name)
 	}
+	return c.openDM(name, userID)
+}
 
-	// Open a DM conversation with the user
+func (c *Client) openDM(name, userID string) (string, error) {
 	ch, _, _, err := c.api.OpenConversation(&slackapi.OpenConversationParameters{
 		Users: []string{userID},
 	})
