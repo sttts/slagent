@@ -72,6 +72,13 @@ func cmdStart() {
 		}
 	}
 
+	// If no channel given, prompt with channel list when credentials exist
+	if cfg.Channel == "" {
+		if _, err := pslack.LoadCredentials(); err == nil {
+			cfg.Channel = promptChannel()
+		}
+	}
+
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
@@ -79,6 +86,37 @@ func cmdStart() {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// promptChannel lists channels and lets the user pick one.
+func promptChannel() string {
+	client, err := pslack.New("")
+	if err != nil {
+		return ""
+	}
+
+	channels, err := client.ListChannels()
+	if err != nil || len(channels) == 0 {
+		return ""
+	}
+
+	fmt.Println("Pick a channel:")
+	for i, ch := range channels {
+		fmt.Printf("  %2d) %-8s  %s\n", i+1, ch.Type, ch.Name)
+	}
+	fmt.Print("\nChannel [1]: ")
+	reader := bufio.NewReader(os.Stdin)
+	line, _ := reader.ReadString('\n')
+	line = strings.TrimSpace(line)
+	idx := 0
+	if line != "" {
+		fmt.Sscanf(line, "%d", &idx)
+		idx--
+	}
+	if idx < 0 || idx >= len(channels) {
+		idx = 0
+	}
+	return channels[idx].ID
 }
 
 func cmdAuth() {
@@ -269,10 +307,8 @@ func cmdChannels() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("%-14s  %-8s  %s\n", "ID", "TYPE", "NAME")
-	fmt.Println(strings.Repeat("─", 50))
-	for _, ch := range channels {
-		fmt.Printf("%-14s  %-8s  %s\n", ch.ID, ch.Type, ch.Name)
+	for i, ch := range channels {
+		fmt.Printf("  %2d) %-14s  %-8s  %s\n", i+1, ch.ID, ch.Type, ch.Name)
 	}
 }
 
@@ -290,7 +326,7 @@ Usage:
       Auto-extract session token from local Slack desktop app.
 
   pairplan channels
-      List accessible Slack channels (shows IDs for private groups).
+      List your Slack channels and group DMs.
 
   pairplan share <plan-file> --channel C
       Post a plan file to Slack for review.

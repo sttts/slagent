@@ -418,11 +418,13 @@ type Channel struct {
 	Type string // "channel", "group", "im", "mpim"
 }
 
-// ListChannels returns channels accessible to the authenticated user.
+// ListChannels returns channels the user is a member of.
 func (c *Client) ListChannels() ([]Channel, error) {
+	types := []string{"public_channel", "private_channel", "mpim", "im"}
 	params := &slackapi.GetConversationsParameters{
-		Types: []string{"public_channel", "private_channel", "mpim", "im"},
-		Limit: 200,
+		Types:           types,
+		Limit:           200,
+		ExcludeArchived: true,
 	}
 	var result []Channel
 	for {
