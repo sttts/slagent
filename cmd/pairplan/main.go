@@ -318,7 +318,7 @@ func cmdChannels() {
 		if ch.Type == "mpim" {
 			prefix = " "
 		}
-		fmt.Printf("  %2d) %s%-30s  %s\n", i+1, prefix, ch.Name, ch.ID)
+		fmt.Printf("  %2d) %s%s\n", i+1, prefix, ch.Name)
 	}
 }
 
