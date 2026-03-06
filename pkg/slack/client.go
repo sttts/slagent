@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -415,23 +414,20 @@ const PollInterval = 3 * time.Second
 
 // Channel represents a Slack channel for listing.
 type Channel struct {
-	ID           string
-	Name         string
-	Type         string  // "channel", "group", "mpim"
-	LastActivity float64 // unix timestamp of last message
+	ID   string
+	Name string
+	Type string // "channel", "group", "mpim", "im"
 }
 
 // ListProgress receives progress updates during ListChannels.
 type ListProgress struct {
-	Phase string // "listing" or "checking"
+	Phase string // "listing"
 	Done  int
-	Total int
 }
 
-// ListChannels returns channels the user is a member of that had activity
-// in the last 30 days, sorted by most recent first.
-// Channels are grouped: channels/groups first, then mpim.
-// mpim names are resolved to @displayname format.
+// ListChannels returns channels the user is a member of.
+// Channels/groups are always included. mpim/im are included only if open.
+// Names are resolved for mpim and im.
 func (c *Client) ListChannels(progress func(ListProgress)) ([]Channel, error) {
 	params := &slackapi.GetConversationsForUserParameters{
 		Types:           []string{"public_channel", "private_channel", "mpim", "im"},
@@ -439,12 +435,7 @@ func (c *Client) ListChannels(progress func(ListProgress)) ([]Channel, error) {
 		ExcludeArchived: true,
 	}
 
-	// Collect all candidate channels
-	type candidate struct {
-		id, name, chType string
-		members          []string // for mpim name resolution
-	}
-	var candidates []candidate
+	var result []Channel
 	for {
 		channels, cursor, err := c.api.GetConversationsForUser(params)
 		if err != nil {
@@ -460,20 +451,28 @@ func (c *Client) ListChannels(progress func(ListProgress)) ([]Channel, error) {
 			case ch.IsPrivate:
 				chType = "group"
 			}
+
+			// For mpim/im, only include if Slack considers it open
+			if (chType == "mpim" || chType == "im") && !ch.IsOpen {
+				continue
+			}
+
 			name := ch.Name
 			if name == "" {
 				name = ch.ID
 			}
-			var members []string
-			if ch.IsIM {
-				members = []string{ch.User}
-			} else {
-				members = ch.Members
+
+			// Resolve member names for mpim and im
+			if chType == "im" {
+				name = c.resolveMemberNames([]string{ch.User})
+			} else if chType == "mpim" && len(ch.Members) > 0 {
+				name = c.resolveMemberNames(ch.Members)
 			}
-			candidates = append(candidates, candidate{ch.ID, name, chType, members})
+
+			result = append(result, Channel{ID: ch.ID, Name: name, Type: chType})
 		}
 		if progress != nil {
-			progress(ListProgress{Phase: "listing", Done: len(candidates)})
+			progress(ListProgress{Phase: "listing", Done: len(result)})
 		}
 		if cursor == "" {
 			break
@@ -481,79 +480,17 @@ func (c *Client) ListChannels(progress func(ListProgress)) ([]Channel, error) {
 		params.Cursor = cursor
 	}
 
-	// Fetch last message timestamp for each channel concurrently
-	type indexedResult struct {
-		idx int
-		ch  Channel
-		ok  bool
-	}
-	cutoff := float64(time.Now().Add(-30 * 24 * time.Hour).Unix())
-	results := make(chan indexedResult, len(candidates))
-	total := len(candidates)
-
-	if progress != nil {
-		progress(ListProgress{Phase: "checking", Done: 0, Total: total})
-	}
-
-	// Limit concurrency to 10 to avoid rate limits
-	var checked int
-	sem := make(chan struct{}, 10)
-	for i, cand := range candidates {
-		sem <- struct{}{}
-		go func(i int, cand candidate) {
-			defer func() { <-sem }()
-			hist, err := c.api.GetConversationHistory(&slackapi.GetConversationHistoryParameters{
-				ChannelID: cand.id,
-				Limit:     1,
-			})
-			if err != nil || hist == nil || len(hist.Messages) == 0 {
-				results <- indexedResult{idx: i}
-				return
-			}
-			ts, _ := strconv.ParseFloat(hist.Messages[0].Timestamp, 64)
-			if ts < cutoff {
-				results <- indexedResult{idx: i}
-				return
-			}
-
-			// Resolve member names for mpim and im
-			name := cand.name
-			if (cand.chType == "mpim" || cand.chType == "im") && len(cand.members) > 0 {
-				name = c.resolveMemberNames(cand.members)
-			}
-
-			results <- indexedResult{
-				idx: i,
-				ch:  Channel{ID: cand.id, Name: name, Type: cand.chType, LastActivity: ts},
-				ok:  true,
-			}
-		}(i, cand)
-	}
-
-	// Collect results with progress
-	var active []Channel
-	for range candidates {
-		r := <-results
-		checked++
-		if progress != nil && checked%5 == 0 {
-			progress(ListProgress{Phase: "checking", Done: checked, Total: total})
-		}
-		if r.ok {
-			active = append(active, r.ch)
-		}
-	}
-
 	// Sort: channels/groups first, then mpim, then im — alphabetical within each
 	typeOrder := map[string]int{"channel": 0, "group": 0, "mpim": 1, "im": 2}
-	sort.Slice(active, func(i, j int) bool {
-		oi, oj := typeOrder[active[i].Type], typeOrder[active[j].Type]
+	sort.Slice(result, func(i, j int) bool {
+		oi, oj := typeOrder[result[i].Type], typeOrder[result[j].Type]
 		if oi != oj {
 			return oi < oj
 		}
-		return active[i].Name < active[j].Name
+		return result[i].Name < result[j].Name
 	})
 
-	return active, nil
+	return result, nil
 }
 
 // resolveMemberNames converts mpim member IDs to "@name, @name, ..." format,
