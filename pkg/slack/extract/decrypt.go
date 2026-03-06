@@ -69,7 +69,14 @@ func decryptCookieValue(encrypted []byte) (string, error) {
 		return "", fmt.Errorf("remove padding: %w", err)
 	}
 
-	return string(plaintext), nil
+	// Chromium DB version ≥24 prepends a 32-byte SHA-256 hash of the host_key.
+	// Find the actual cookie value by looking for the xoxd- prefix.
+	result := string(plaintext)
+	if idx := strings.Index(result, "xoxd-"); idx > 0 {
+		result = result[idx:]
+	}
+
+	return result, nil
 }
 
 // getPassphrase retrieves the Slack encryption passphrase from the OS keystore.
