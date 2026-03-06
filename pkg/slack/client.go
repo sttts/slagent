@@ -203,32 +203,13 @@ func (c *Client) StartThread(topic string) (string, error) {
 	return link, nil
 }
 
-// PostClaudeMessage posts Claude's response to the thread with auto-split.
+// PostClaudeMessage posts Claude's response to the thread as code blocks with auto-split.
 func (c *Client) PostClaudeMessage(text string) error {
 	if c.threadTS == "" {
 		return fmt.Errorf("no active thread")
 	}
 
-	// Short message: single Section block
-	if len(text) <= maxBlockTextLen {
-		msg := fmt.Sprintf("🤖 %s", text)
-		section := slackapi.NewSectionBlock(
-			slackapi.NewTextBlockObject("mrkdwn", msg, false, false),
-			nil, nil,
-		)
-		_, ts, err := c.api.PostMessage(
-			c.channel,
-			slackapi.MsgOptionBlocks(section),
-			slackapi.MsgOptionText(msg, false),
-			slackapi.MsgOptionTS(c.threadTS),
-		)
-		if err == nil {
-			c.trackPosted(ts)
-		}
-		return err
-	}
-
-	// Long message: split at line boundaries, each chunk in a code block
+	// Split at line boundaries, each chunk in a code block
 	chunks := splitAtLines(text, maxBlockTextLen-20) // leave room for ``` markers
 	for _, chunk := range chunks {
 		wrapped := fmt.Sprintf("```\n%s\n```", chunk)
@@ -298,26 +279,6 @@ func (c *Client) PostUserMessage(user, text string) error {
 	return err
 }
 
-// PostToolActivity posts a brief tool activity summary to the thread.
-func (c *Client) PostToolActivity(summary string) error {
-	if c.threadTS == "" {
-		return fmt.Errorf("no active thread")
-	}
-
-	ctx := slackapi.NewContextBlock("",
-		slackapi.NewTextBlockObject("mrkdwn", fmt.Sprintf("🔧 %s", summary), false, false),
-	)
-	_, ts, err := c.api.PostMessage(
-		c.channel,
-		slackapi.MsgOptionBlocks(ctx),
-		slackapi.MsgOptionText(fmt.Sprintf("🔧 %s", summary), false),
-		slackapi.MsgOptionTS(c.threadTS),
-	)
-	if err == nil {
-		c.trackPosted(ts)
-	}
-	return err
-}
 
 // PostSessionEnd posts a session-ended message.
 func (c *Client) PostSessionEnd() error {
@@ -760,84 +721,144 @@ func (c *Client) resolveMemberNames(members []string) string {
 	return strings.Join(names, ", ")
 }
 
-// LiveThinking manages a live-updating thinking indicator in Slack.
-type LiveThinking struct {
+// LiveStatus manages live-updating status messages in Slack.
+// Thinking and tools are separate messages, each updated in-place within its type.
+type LiveStatus struct {
 	client     *Client
-	ts         string // timestamp of the thinking message
+	thinkTS    string   // timestamp of thinking message
+	toolTS     string   // timestamp of tool activity message
+	tools      []string // recent tool summaries
 	lastUpdate time.Time
 	mu         sync.Mutex
 }
 
-// NewLiveThinking creates a LiveThinking tied to the given client.
-func (c *Client) NewLiveThinking() *LiveThinking {
-	return &LiveThinking{client: c}
+const maxToolHistory = 5
+
+// NewLiveStatus creates a LiveStatus tied to the given client.
+func (c *Client) NewLiveStatus() *LiveStatus {
+	return &LiveStatus{client: c}
 }
 
-// Start posts the initial thinking indicator message.
-func (lt *LiveThinking) Start() {
-	lt.mu.Lock()
-	defer lt.mu.Unlock()
+// StartThinking posts the initial thinking indicator.
+func (ls *LiveStatus) StartThinking() {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
 
-	if lt.client.threadTS == "" {
+	if ls.client.threadTS == "" {
 		return
 	}
 
 	ctx := slackapi.NewContextBlock("",
-		slackapi.NewTextBlockObject("mrkdwn", "🤔 _thinking..._", false, false),
+		slackapi.NewTextBlockObject("mrkdwn", "💭 _thinking..._", false, false),
 	)
-	_, ts, err := lt.client.api.PostMessage(
-		lt.client.channel,
+	_, ts, err := ls.client.api.PostMessage(
+		ls.client.channel,
 		slackapi.MsgOptionBlocks(ctx),
 		slackapi.MsgOptionText("thinking...", false),
-		slackapi.MsgOptionTS(lt.client.threadTS),
+		slackapi.MsgOptionTS(ls.client.threadTS),
 	)
 	if err != nil {
 		return
 	}
-	lt.ts = ts
-	lt.lastUpdate = time.Now()
+	ls.thinkTS = ts
+	ls.client.trackPosted(ts)
+	ls.lastUpdate = time.Now()
 }
 
-// Update updates the thinking message with accumulated text, throttled to 1/sec.
-func (lt *LiveThinking) Update(text string) {
-	lt.mu.Lock()
-	defer lt.mu.Unlock()
+// UpdateThinking updates the thinking message with accumulated text, throttled to 1/sec.
+func (ls *LiveStatus) UpdateThinking(text string) {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
 
-	if lt.ts == "" {
+	if ls.thinkTS == "" || time.Since(ls.lastUpdate) < time.Second {
 		return
 	}
 
-	// Throttle updates to at most once per second
-	if time.Since(lt.lastUpdate) < time.Second {
-		return
-	}
-
-	// Truncate to last ~2000 chars
+	// Show last ~500 chars, last 5 lines
 	display := text
-	if len(display) > 2000 {
-		display = "…" + display[len(display)-1999:]
+	if len(display) > 500 {
+		display = "…" + display[len(display)-499:]
+	}
+	lines := strings.Split(display, "\n")
+	if len(lines) > 5 {
+		lines = append([]string{"…"}, lines[len(lines)-5:]...)
 	}
 
+	content := fmt.Sprintf("💭 _thinking..._\n```%s```", strings.Join(lines, "\n"))
 	ctx := slackapi.NewContextBlock("",
-		slackapi.NewTextBlockObject("mrkdwn", fmt.Sprintf("🤔 _thinking..._\n```%s```", display), false, false),
+		slackapi.NewTextBlockObject("mrkdwn", content, false, false),
 	)
-	lt.client.api.UpdateMessage(
-		lt.client.channel,
-		lt.ts,
+	ls.client.api.UpdateMessage(
+		ls.client.channel,
+		ls.thinkTS,
 		slackapi.MsgOptionBlocks(ctx),
 		slackapi.MsgOptionText("thinking...", false),
 	)
-	lt.lastUpdate = time.Now()
+	ls.lastUpdate = time.Now()
 }
 
-// Done deletes the thinking message.
-func (lt *LiveThinking) Done() {
-	lt.mu.Lock()
-	defer lt.mu.Unlock()
+// UpdateTool adds a tool activity entry (separate message from thinking).
+func (ls *LiveStatus) UpdateTool(summary string) {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
 
-	if lt.ts == "" {
+	if ls.client.threadTS == "" {
 		return
 	}
-	lt.client.api.DeleteMessage(lt.client.channel, lt.ts)
-	lt.ts = ""
+
+	ls.tools = append(ls.tools, summary)
+	if len(ls.tools) > maxToolHistory {
+		ls.tools = ls.tools[len(ls.tools)-maxToolHistory:]
+	}
+
+	// Build display with scrolling history
+	var lines []string
+	for i, t := range ls.tools {
+		if i == len(ls.tools)-1 {
+			lines = append(lines, fmt.Sprintf("🔧 %s", t))
+		} else {
+			lines = append(lines, fmt.Sprintf("      %s", t))
+		}
+	}
+	display := strings.Join(lines, "\n")
+
+	ctx := slackapi.NewContextBlock("",
+		slackapi.NewTextBlockObject("mrkdwn", display, false, false),
+	)
+
+	if ls.toolTS == "" {
+		_, ts, err := ls.client.api.PostMessage(
+			ls.client.channel,
+			slackapi.MsgOptionBlocks(ctx),
+			slackapi.MsgOptionText(display, false),
+			slackapi.MsgOptionTS(ls.client.threadTS),
+		)
+		if err == nil {
+			ls.toolTS = ts
+			ls.client.trackPosted(ts)
+		}
+	} else {
+		ls.client.api.UpdateMessage(
+			ls.client.channel,
+			ls.toolTS,
+			slackapi.MsgOptionBlocks(ctx),
+			slackapi.MsgOptionText(display, false),
+		)
+	}
+}
+
+// Done deletes both status messages.
+func (ls *LiveStatus) Done() {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+
+	if ls.thinkTS != "" {
+		ls.client.api.DeleteMessage(ls.client.channel, ls.thinkTS)
+		ls.thinkTS = ""
+	}
+	if ls.toolTS != "" {
+		ls.client.api.DeleteMessage(ls.client.channel, ls.toolTS)
+		ls.toolTS = ""
+	}
+	ls.tools = nil
 }

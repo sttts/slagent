@@ -3,8 +3,10 @@ package session
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/user"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -191,24 +193,24 @@ func (s *Session) readTurn() error {
 	var thinkingText strings.Builder
 	thinkingShown := false
 
-	// Set up live thinking indicator for Slack
-	var lt *pslack.LiveThinking
+	// Set up live status indicator for Slack
+	var status *pslack.LiveStatus
 	if s.slack != nil {
-		lt = s.slack.NewLiveThinking()
+		status = s.slack.NewLiveStatus()
 	}
 
 	for {
 		evt, err := s.proc.ReadEvent()
 		if err != nil {
-			if lt != nil {
-				lt.Done()
+			if status != nil {
+				status.Done()
 			}
 			s.ui.EndResponse()
 			return err
 		}
 		if evt == nil {
-			if lt != nil {
-				lt.Done()
+			if status != nil {
+				status.Done()
 			}
 			s.ui.EndResponse()
 			return fmt.Errorf("unexpected EOF from Claude")
@@ -216,9 +218,9 @@ func (s *Session) readTurn() error {
 
 		switch evt.Type {
 		case "text_delta":
-			// End thinking phase on first text
-			if lt != nil && thinkingShown {
-				lt.Done()
+			// End status indicator on first text
+			if status != nil {
+				status.Done()
 			}
 			s.ui.StreamText(evt.Text)
 			fullText.WriteString(evt.Text)
@@ -227,13 +229,13 @@ func (s *Session) readTurn() error {
 			if !thinkingShown {
 				s.ui.Thinking()
 				thinkingShown = true
-				if lt != nil {
-					go lt.Start()
+				if status != nil {
+					go status.StartThinking()
 				}
 			}
 			thinkingText.WriteString(evt.Text)
-			if lt != nil {
-				go lt.Update(thinkingText.String())
+			if status != nil {
+				go status.UpdateThinking(thinkingText.String())
 			}
 
 		case claude.TypeAssistant:
@@ -244,18 +246,15 @@ func (s *Session) readTurn() error {
 			}
 
 		case "tool_use":
-			// End thinking phase if still active
-			if lt != nil && thinkingShown {
-				lt.Done()
-			}
-			s.ui.ToolActivity(evt.ToolName, summarizeToolInput(evt.ToolInput))
-			if s.slack != nil {
-				go s.slack.PostToolActivity(fmt.Sprintf("%s: %s", evt.ToolName, summarizeToolInput(evt.ToolInput)))
+			summary := formatTool(evt.ToolName, evt.ToolInput)
+			s.ui.ToolActivity(summary)
+			if status != nil {
+				go status.UpdateTool(summary)
 			}
 
 		case claude.TypeResult:
-			if lt != nil {
-				lt.Done()
+			if status != nil {
+				status.Done()
 			}
 			s.ui.EndResponse()
 
@@ -323,9 +322,61 @@ func currentUser() string {
 	return u.Username
 }
 
-func summarizeToolInput(input string) string {
-	if len(input) > 80 {
-		return input[:77] + "..."
+// formatTool returns a pretty one-line summary of a tool use.
+func formatTool(toolName, rawInput string) string {
+	var input map[string]interface{}
+	json.Unmarshal([]byte(rawInput), &input)
+
+	str := func(key string) string {
+		if v, ok := input[key]; ok {
+			if s, ok := v.(string); ok {
+				return s
+			}
+		}
+		return ""
 	}
-	return input
+
+	switch toolName {
+	case "Read":
+		return fmt.Sprintf("📄 %s", filepath.Base(str("file_path")))
+	case "Write":
+		return fmt.Sprintf("✏️  %s (new)", filepath.Base(str("file_path")))
+	case "Edit":
+		return fmt.Sprintf("✏️  %s", filepath.Base(str("file_path")))
+	case "Glob":
+		return fmt.Sprintf("🔍 %s", str("pattern"))
+	case "Grep":
+		p := str("pattern")
+		if path := str("path"); path != "" {
+			return fmt.Sprintf("🔍 %s in %s", p, filepath.Base(path))
+		}
+		return fmt.Sprintf("🔍 %s", p)
+	case "Bash":
+		cmd := str("command")
+		if len(cmd) > 60 {
+			cmd = cmd[:57] + "..."
+		}
+		return fmt.Sprintf("💻 %s", cmd)
+	case "Agent":
+		if d := str("description"); d != "" {
+			return fmt.Sprintf("🤖 %s", d)
+		}
+		p := str("prompt")
+		if len(p) > 60 {
+			p = p[:57] + "..."
+		}
+		return fmt.Sprintf("🤖 %s", p)
+	case "WebFetch":
+		return fmt.Sprintf("🌐 %s", str("url"))
+	case "WebSearch":
+		return fmt.Sprintf("🔎 %s", str("query"))
+	case "TodoWrite", "TaskCreate", "TaskUpdate":
+		return fmt.Sprintf("📋 %s", str("subject"))
+	default:
+		summary := rawInput
+		if len(summary) > 60 {
+			summary = summary[:57] + "..."
+		}
+		return fmt.Sprintf("%s: %s", toolName, summary)
+	}
 }
