@@ -104,7 +104,7 @@ func promptChannel() string {
 	fmt.Println("Pick a channel:")
 	for i, ch := range channels {
 		name := ch.Name
-		if ch.Type != "mpim" {
+		if ch.Type == "channel" || ch.Type == "group" {
 			name = "#" + name
 		}
 		fmt.Printf("  %2d) %s\n", i+1, name)
@@ -315,7 +315,7 @@ func cmdChannels() {
 
 	for i, ch := range channels {
 		name := ch.Name
-		if ch.Type != "mpim" {
+		if ch.Type == "channel" || ch.Type == "group" {
 			name = "#" + name
 		}
 		fmt.Printf("  %2d) %s\n", i+1, name)

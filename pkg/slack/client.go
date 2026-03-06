@@ -434,7 +434,7 @@ type ListProgress struct {
 // mpim names are resolved to @displayname format.
 func (c *Client) ListChannels(progress func(ListProgress)) ([]Channel, error) {
 	params := &slackapi.GetConversationsForUserParameters{
-		Types:           []string{"public_channel", "private_channel", "mpim"},
+		Types:           []string{"public_channel", "private_channel", "mpim", "im"},
 		Limit:           200,
 		ExcludeArchived: true,
 	}
@@ -453,6 +453,8 @@ func (c *Client) ListChannels(progress func(ListProgress)) ([]Channel, error) {
 		for _, ch := range channels {
 			chType := "channel"
 			switch {
+			case ch.IsIM:
+				chType = "im"
 			case ch.IsMpIM:
 				chType = "mpim"
 			case ch.IsPrivate:
@@ -462,7 +464,13 @@ func (c *Client) ListChannels(progress func(ListProgress)) ([]Channel, error) {
 			if name == "" {
 				name = ch.ID
 			}
-			candidates = append(candidates, candidate{ch.ID, name, chType, ch.Members})
+			var members []string
+			if ch.IsIM {
+				members = []string{ch.User}
+			} else {
+				members = ch.Members
+			}
+			candidates = append(candidates, candidate{ch.ID, name, chType, members})
 		}
 		if progress != nil {
 			progress(ListProgress{Phase: "listing", Done: len(candidates)})
@@ -508,10 +516,10 @@ func (c *Client) ListChannels(progress func(ListProgress)) ([]Channel, error) {
 				return
 			}
 
-			// Resolve mpim names to @displayname
+			// Resolve member names for mpim and im
 			name := cand.name
-			if cand.chType == "mpim" && len(cand.members) > 0 {
-				name = c.resolveMpimName(cand.members)
+			if (cand.chType == "mpim" || cand.chType == "im") && len(cand.members) > 0 {
+				name = c.resolveMemberNames(cand.members)
 			}
 
 			results <- indexedResult{
@@ -535,12 +543,12 @@ func (c *Client) ListChannels(progress func(ListProgress)) ([]Channel, error) {
 		}
 	}
 
-	// Sort: channels/groups first (alphabetical), then mpim (alphabetical)
+	// Sort: channels/groups first, then mpim, then im — alphabetical within each
+	typeOrder := map[string]int{"channel": 0, "group": 0, "mpim": 1, "im": 2}
 	sort.Slice(active, func(i, j int) bool {
-		iMpim := active[i].Type == "mpim"
-		jMpim := active[j].Type == "mpim"
-		if iMpim != jMpim {
-			return !iMpim
+		oi, oj := typeOrder[active[i].Type], typeOrder[active[j].Type]
+		if oi != oj {
+			return oi < oj
 		}
 		return active[i].Name < active[j].Name
 	})
@@ -548,9 +556,9 @@ func (c *Client) ListChannels(progress func(ListProgress)) ([]Channel, error) {
 	return active, nil
 }
 
-// resolveMpimName converts mpim member IDs to "@name, @name, ..." format,
+// resolveMemberNames converts mpim member IDs to "@name, @name, ..." format,
 // excluding the authenticated user.
-func (c *Client) resolveMpimName(members []string) string {
+func (c *Client) resolveMemberNames(members []string) string {
 	var names []string
 	for _, uid := range members {
 		if uid == c.ownUserID {
