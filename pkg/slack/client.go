@@ -439,12 +439,14 @@ func (c *Client) ResolveChannelByName(name string) (string, error) {
 
 // ResolveUserChannel looks up a user by name/display name and opens a DM channel.
 // The input can be "@username" or just "username".
-func (c *Client) ResolveUserChannel(name string) (string, error) {
+// The progress callback receives the number of users checked so far.
+func (c *Client) ResolveUserChannel(name string, progress func(int)) (string, error) {
 	name = strings.TrimPrefix(name, "@")
 
 	// Paginate users.list, stop as soon as we find a match
 	ctx := context.Background()
 	var userID string
+	checked := 0
 	pager := c.api.GetUsersPaginated(slackapi.GetUsersOptionLimit(200))
 	for {
 		pager, err := pager.Next(ctx)
@@ -461,6 +463,10 @@ func (c *Client) ResolveUserChannel(name string) (string, error) {
 				userID = u.ID
 				break
 			}
+		}
+		checked += len(pager.Users)
+		if progress != nil {
+			progress(checked)
 		}
 		if userID != "" {
 			break

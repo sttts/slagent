@@ -86,7 +86,8 @@ func cmdStart() {
 			os.Exit(1)
 		}
 		if targetUser != "" {
-			chID, err := client.ResolveUserChannel(targetUser)
+			chID, err := client.ResolveUserChannel(targetUser, userProgress)
+			fmt.Fprint(os.Stderr, "\r\033[K")
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error resolving user: %v\n", err)
 				os.Exit(1)
@@ -149,7 +150,8 @@ func promptChannel() string {
 
 	// @username → resolve to DM channel
 	if strings.HasPrefix(line, "@") {
-		chID, err := client.ResolveUserChannel(line)
+		chID, err := client.ResolveUserChannel(line, userProgress)
+		fmt.Fprint(os.Stderr, "\r\033[K")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			return ""
@@ -372,6 +374,10 @@ func isSlackID(s string) bool {
 	}
 	prefix := s[0]
 	return (prefix == 'C' || prefix == 'G' || prefix == 'D') && s[1] >= '0' && s[1] <= '9'
+}
+
+func userProgress(checked int) {
+	fmt.Fprintf(os.Stderr, "\rsearching users... %d", checked)
 }
 
 func slackProgress(p pslack.ListProgress) {
