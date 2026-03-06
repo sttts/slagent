@@ -95,7 +95,10 @@ func promptChannel() string {
 		return ""
 	}
 
-	channels, err := client.ListChannels()
+	channels, err := client.ListChannels(func(n int) {
+		fmt.Fprintf(os.Stderr, "\rfetching channels... %d", n)
+	})
+	fmt.Fprint(os.Stderr, "\r\033[K")
 	if err != nil || len(channels) == 0 {
 		return ""
 	}
@@ -301,7 +304,10 @@ func cmdChannels() {
 		os.Exit(1)
 	}
 
-	channels, err := client.ListChannels()
+	channels, err := client.ListChannels(func(n int) {
+		fmt.Fprintf(os.Stderr, "\rfetching channels... %d", n)
+	})
+	fmt.Fprint(os.Stderr, "\r\033[K") // clear progress line
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error listing channels: %v\n", err)
 		os.Exit(1)

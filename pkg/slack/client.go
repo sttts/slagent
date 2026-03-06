@@ -419,7 +419,8 @@ type Channel struct {
 }
 
 // ListChannels returns channels the user is a member of.
-func (c *Client) ListChannels() ([]Channel, error) {
+// The optional progress callback is called with the running count after each API page.
+func (c *Client) ListChannels(progress func(n int)) ([]Channel, error) {
 	types := []string{"public_channel", "private_channel", "mpim", "im"}
 	params := &slackapi.GetConversationsParameters{
 		Types:           types,
@@ -447,6 +448,9 @@ func (c *Client) ListChannels() ([]Channel, error) {
 				name = ch.ID
 			}
 			result = append(result, Channel{ID: ch.ID, Name: name, Type: chType})
+		}
+		if progress != nil {
+			progress(len(result))
 		}
 		if cursor == "" {
 			break
