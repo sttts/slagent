@@ -323,7 +323,12 @@ func cmdChannels() {
 }
 
 func slackProgress(p pslack.ListProgress) {
-	fmt.Fprintf(os.Stderr, "\rfetching channels... %d", p.Done)
+	switch p.Phase {
+	case "checking":
+		fmt.Fprintf(os.Stderr, "\rchecking recent activity... %d/%d", p.Done, p.Total)
+	default:
+		fmt.Fprintf(os.Stderr, "\rfetching channels... %d", p.Done)
+	}
 }
 
 func printUsage() {

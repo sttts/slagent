@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -421,13 +422,14 @@ type Channel struct {
 
 // ListProgress receives progress updates during ListChannels.
 type ListProgress struct {
-	Phase string // "listing"
+	Phase string // "listing" or "checking"
 	Done  int
+	Total int // set during "checking" phase
 }
 
 // ListChannels returns channels the user is a member of.
-// Channels/groups are always included. mpim/im are included only if open.
-// Names are resolved for mpim and im.
+// Channels/groups are always included. mpim/im are filtered
+// to those with activity in the last 30 days.
 func (c *Client) ListChannels(progress func(ListProgress)) ([]Channel, error) {
 	params := &slackapi.GetConversationsForUserParameters{
 		Types:           []string{"public_channel", "private_channel", "mpim", "im"},
@@ -435,13 +437,19 @@ func (c *Client) ListChannels(progress func(ListProgress)) ([]Channel, error) {
 		ExcludeArchived: true,
 	}
 
-	var result []Channel
+	// Phase 1: collect all conversations
+	type candidate struct {
+		id, name, chType string
+		members          []string
+	}
+	var channels []candidate
+	var dms []candidate
 	for {
-		channels, cursor, err := c.api.GetConversationsForUser(params)
+		convs, cursor, err := c.api.GetConversationsForUser(params)
 		if err != nil {
 			return nil, fmt.Errorf("get conversations: %w", err)
 		}
-		for _, ch := range channels {
+		for _, ch := range convs {
 			chType := "channel"
 			switch {
 			case ch.IsIM:
@@ -451,33 +459,84 @@ func (c *Client) ListChannels(progress func(ListProgress)) ([]Channel, error) {
 			case ch.IsPrivate:
 				chType = "group"
 			}
-
-			// For mpim/im, only include if Slack considers it open
-			if (chType == "mpim" || chType == "im") && !ch.IsOpen {
-				continue
-			}
-
 			name := ch.Name
 			if name == "" {
 				name = ch.ID
 			}
-
-			// Resolve member names for mpim and im
-			if chType == "im" {
-				name = c.resolveMemberNames([]string{ch.User})
-			} else if chType == "mpim" && len(ch.Members) > 0 {
-				name = c.resolveMemberNames(ch.Members)
+			var members []string
+			if ch.IsIM {
+				members = []string{ch.User}
+			} else {
+				members = ch.Members
 			}
-
-			result = append(result, Channel{ID: ch.ID, Name: name, Type: chType})
+			cand := candidate{ch.ID, name, chType, members}
+			if chType == "mpim" || chType == "im" {
+				dms = append(dms, cand)
+			} else {
+				channels = append(channels, cand)
+			}
 		}
 		if progress != nil {
-			progress(ListProgress{Phase: "listing", Done: len(result)})
+			progress(ListProgress{Phase: "listing", Done: len(channels) + len(dms)})
 		}
 		if cursor == "" {
 			break
 		}
 		params.Cursor = cursor
+	}
+
+	// Channels/groups go straight into result
+	var result []Channel
+	for _, ch := range channels {
+		result = append(result, Channel{ID: ch.id, Name: ch.name, Type: ch.chType})
+	}
+
+	// Phase 2: check mpim/im for 30-day activity (concurrent, only DMs)
+	if len(dms) > 0 {
+		cutoff := float64(time.Now().Add(-30 * 24 * time.Hour).Unix())
+		type dmResult struct {
+			ch Channel
+			ok bool
+		}
+		results := make(chan dmResult, len(dms))
+		sem := make(chan struct{}, 10)
+
+		for _, cand := range dms {
+			sem <- struct{}{}
+			go func(cand candidate) {
+				defer func() { <-sem }()
+				hist, err := c.api.GetConversationHistory(&slackapi.GetConversationHistoryParameters{
+					ChannelID: cand.id,
+					Limit:     1,
+				})
+				if err != nil || hist == nil || len(hist.Messages) == 0 {
+					results <- dmResult{}
+					return
+				}
+				ts, _ := strconv.ParseFloat(hist.Messages[0].Timestamp, 64)
+				if ts < cutoff {
+					results <- dmResult{}
+					return
+				}
+				name := c.resolveMemberNames(cand.members)
+				results <- dmResult{
+					ch: Channel{ID: cand.id, Name: name, Type: cand.chType},
+					ok: true,
+				}
+			}(cand)
+		}
+
+		checked := 0
+		for range dms {
+			r := <-results
+			checked++
+			if progress != nil && checked%5 == 0 {
+				progress(ListProgress{Phase: "checking", Done: checked, Total: len(dms)})
+			}
+			if r.ok {
+				result = append(result, r.ch)
+			}
+		}
 	}
 
 	// Sort: channels/groups first, then mpim, then im — alphabetical within each
