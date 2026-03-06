@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -413,19 +415,23 @@ const PollInterval = 3 * time.Second
 
 // Channel represents a Slack channel for listing.
 type Channel struct {
-	ID   string
-	Name string
-	Type string // "channel", "group", "im", "mpim"
+	ID       string
+	Name     string
+	Type     string  // "channel", "group", "im", "mpim"
+	LastActivity float64 // unix timestamp of last message (0 if unknown)
 }
 
-// ListChannels returns channels the user is a member of.
+// ListChannels returns channels the user is a member of, sorted by recent
+// activity and filtered to the last 30 days. IMs are resolved to user names.
 // The optional progress callback is called with the running count after each API page.
 func (c *Client) ListChannels(progress func(n int)) ([]Channel, error) {
 	params := &slackapi.GetConversationsForUserParameters{
-		Types:           []string{"public_channel", "private_channel", "mpim", "im"},
+		Types:           []string{"public_channel", "private_channel", "mpim"},
 		Limit:           200,
 		ExcludeArchived: true,
 	}
+
+	cutoff := float64(time.Now().Add(-30 * 24 * time.Hour).Unix())
 	var result []Channel
 	for {
 		channels, cursor, err := c.api.GetConversationsForUser(params)
@@ -433,12 +439,24 @@ func (c *Client) ListChannels(progress func(n int)) ([]Channel, error) {
 			return nil, fmt.Errorf("get conversations: %w", err)
 		}
 		for _, ch := range channels {
+			// Determine last activity from Latest message or LastRead
+			var lastActivity float64
+			if ch.Latest != nil && ch.Latest.Timestamp != "" {
+				lastActivity, _ = strconv.ParseFloat(ch.Latest.Timestamp, 64)
+			}
+			if lastActivity == 0 && ch.LastRead != "" {
+				lastActivity, _ = strconv.ParseFloat(ch.LastRead, 64)
+			}
+
+			// Skip channels with no activity in 30 days
+			if lastActivity > 0 && lastActivity < cutoff {
+				continue
+			}
+
 			chType := "channel"
 			switch {
 			case ch.IsMpIM:
 				chType = "mpim"
-			case ch.IsIM:
-				chType = "im"
 			case ch.IsPrivate:
 				chType = "group"
 			}
@@ -446,7 +464,7 @@ func (c *Client) ListChannels(progress func(n int)) ([]Channel, error) {
 			if name == "" {
 				name = ch.ID
 			}
-			result = append(result, Channel{ID: ch.ID, Name: name, Type: chType})
+			result = append(result, Channel{ID: ch.ID, Name: name, Type: chType, LastActivity: lastActivity})
 		}
 		if progress != nil {
 			progress(len(result))
@@ -456,6 +474,12 @@ func (c *Client) ListChannels(progress func(n int)) ([]Channel, error) {
 		}
 		params.Cursor = cursor
 	}
+
+	// Sort by most recent activity first
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].LastActivity > result[j].LastActivity
+	})
+
 	return result, nil
 }
 
