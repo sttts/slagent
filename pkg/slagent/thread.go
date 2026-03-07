@@ -110,7 +110,7 @@ func (t *Thread) NewTurn() Turn {
 	if isNativeToken(t.token) {
 		w = newNativeTurn(t.token, t.config.apiURL, t.channel, threadTS, t.config.markdownConverter, posted, t.config.bufferSize)
 	} else {
-		w = newCompatTurn(t.api, t.channel, threadTS, t.config.markdownConverter, posted)
+		w = newCompatTurn(t.api, t.channel, threadTS, posted)
 	}
 	return &turnImpl{w: w}
 }
@@ -199,22 +199,22 @@ func (t *Thread) PostUser(user, text string) error {
 	return nil
 }
 
-// PostMarkdown converts markdown to mrkdwn, splits at 3000 chars, and posts as section blocks.
+// PostMarkdown posts markdown content as code blocks in the thread.
 func (t *Thread) PostMarkdown(text string) error {
 	t.mu.Lock()
 	threadTS := t.threadTS
-	convert := t.config.markdownConverter
 	t.mu.Unlock()
 
 	if threadTS == "" {
 		return fmt.Errorf("no active thread")
 	}
 
-	mrkdwn := convert(text)
-	chunks := splitAtLines(mrkdwn, maxBlockTextLen)
+	// Wrap in code block; reserve 6 chars for the ``` fences + newlines
+	chunks := splitAtLines(text, maxBlockTextLen-8)
 	for _, chunk := range chunks {
+		fenced := "```\n" + chunk + "\n```"
 		section := slackapi.NewSectionBlock(
-			slackapi.NewTextBlockObject("mrkdwn", chunk, false, false),
+			slackapi.NewTextBlockObject("mrkdwn", fenced, false, false),
 			nil, nil,
 		)
 		_, ts, err := t.api.PostMessage(

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync"
 
 	slackapi "github.com/slack-go/slack"
@@ -317,6 +318,34 @@ func (m *mockSlack) handleStopStream(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"ok": true})
+}
+
+// messageText returns the mrkdwn text content of a message's blocks.
+// It extracts text from section and context blocks.
+func (m *mockMessage) blockText() string {
+	if len(m.Blocks) == 0 {
+		return m.Text
+	}
+	var blocks []struct {
+		Type     string `json:"type"`
+		Text     *struct{ Text string } `json:"text,omitempty"`
+		Elements []struct {
+			Text string `json:"text"`
+		} `json:"elements,omitempty"`
+	}
+	if err := json.Unmarshal(m.Blocks, &blocks); err != nil {
+		return m.Text
+	}
+	var parts []string
+	for _, b := range blocks {
+		if b.Text != nil {
+			parts = append(parts, b.Text.Text)
+		}
+		for _, e := range b.Elements {
+			parts = append(parts, e.Text)
+		}
+	}
+	return strings.Join(parts, "\n")
 }
 
 // injectReply adds a reply message to the mock (simulating a user typing in the thread).
