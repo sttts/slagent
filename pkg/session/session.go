@@ -193,10 +193,12 @@ func (s *Session) readTurn() error {
 	var thinkingText strings.Builder
 	thinkingShown := false
 
-	// Set up live status indicator for Slack
+	// Set up live indicators for Slack
 	var status *pslack.LiveStatus
+	var resp *pslack.LiveResponse
 	if s.slack != nil {
 		status = s.slack.NewLiveStatus()
+		resp = s.slack.NewLiveResponse()
 	}
 
 	for {
@@ -221,9 +223,15 @@ func (s *Session) readTurn() error {
 			// End status indicator on first text
 			if status != nil {
 				status.Done()
+				status = nil
 			}
 			s.ui.StreamText(evt.Text)
 			fullText.WriteString(evt.Text)
+
+			// Stream to Slack
+			if resp != nil {
+				go resp.Update(fullText.String())
+			}
 
 		case "thinking":
 			if !thinkingShown {
@@ -258,10 +266,10 @@ func (s *Session) readTurn() error {
 			}
 			s.ui.EndResponse()
 
-			// Post complete response to Slack
+			// Replace streaming message with final split response
 			text := fullText.String()
-			if s.slack != nil && text != "" {
-				go s.slack.PostClaudeMessage(text)
+			if resp != nil && text != "" {
+				go resp.Finish(text)
 			}
 			return nil
 

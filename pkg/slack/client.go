@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -203,18 +204,19 @@ func (c *Client) StartThread(topic string) (string, error) {
 	return link, nil
 }
 
-// PostClaudeMessage posts Claude's response to the thread as code blocks with auto-split.
+// PostClaudeMessage posts Claude's response as formatted Slack mrkdwn.
 func (c *Client) PostClaudeMessage(text string) error {
 	if c.threadTS == "" {
 		return fmt.Errorf("no active thread")
 	}
 
-	// Split at line boundaries, each chunk in a code block
-	chunks := splitAtLines(text, maxBlockTextLen-20) // leave room for ``` markers
+	mrkdwn := markdownToMrkdwn(text)
+
+	// Split into chunks that fit in Section blocks
+	chunks := splitAtLines(mrkdwn, maxBlockTextLen)
 	for _, chunk := range chunks {
-		wrapped := fmt.Sprintf("```\n%s\n```", chunk)
 		section := slackapi.NewSectionBlock(
-			slackapi.NewTextBlockObject("mrkdwn", wrapped, false, false),
+			slackapi.NewTextBlockObject("mrkdwn", chunk, false, false),
 			nil, nil,
 		)
 		_, ts, err := c.api.PostMessage(
@@ -252,6 +254,35 @@ func splitAtLines(text string, maxLen int) []string {
 		text = text[cut:]
 	}
 	return chunks
+}
+
+var (
+	reHeading    = regexp.MustCompile(`(?m)^(#{1,6})\s+(.+)$`)
+	reBold       = regexp.MustCompile(`\*\*(.+?)\*\*`)
+	reItalic     = regexp.MustCompile(`(?:^|[^*])_(.+?)_`)
+	reLink       = regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
+	reListDash   = regexp.MustCompile(`(?m)^(\s*)[-*]\s+`)
+	reStrikethrough = regexp.MustCompile(`~~(.+?)~~`)
+)
+
+// markdownToMrkdwn converts Markdown to Slack mrkdwn format.
+func markdownToMrkdwn(text string) string {
+	// Headings: # Foo → *Foo*
+	text = reHeading.ReplaceAllString(text, "*$2*")
+
+	// Bold: **foo** → *foo*
+	text = reBold.ReplaceAllString(text, "*$1*")
+
+	// Links: [text](url) → <url|text>
+	text = reLink.ReplaceAllString(text, "<$2|$1>")
+
+	// Unordered lists: - item → • item
+	text = reListDash.ReplaceAllString(text, "${1}• ")
+
+	// Strikethrough: ~~foo~~ → ~foo~
+	text = reStrikethrough.ReplaceAllString(text, "~$1~")
+
+	return text
 }
 
 // PostUserMessage posts the local user's message to the thread.
@@ -861,4 +892,81 @@ func (ls *LiveStatus) Done() {
 		ls.toolTS = ""
 	}
 	ls.tools = nil
+}
+
+// LiveResponse streams Claude's text response to Slack, updating in-place.
+type LiveResponse struct {
+	client     *Client
+	ts         string // timestamp of the streaming message
+	lastUpdate time.Time
+	mu         sync.Mutex
+}
+
+// NewLiveResponse creates a LiveResponse tied to the given client.
+func (c *Client) NewLiveResponse() *LiveResponse {
+	return &LiveResponse{client: c}
+}
+
+// Update posts or updates the streaming response as plain text, throttled to 1/sec.
+func (lr *LiveResponse) Update(text string) {
+	lr.mu.Lock()
+	defer lr.mu.Unlock()
+
+	if lr.client.threadTS == "" {
+		return
+	}
+
+	// Throttle updates to at most once per second
+	if lr.ts != "" && time.Since(lr.lastUpdate) < time.Second {
+		return
+	}
+
+	// Show last ~2800 chars as mrkdwn (no code blocks to avoid re-collapse on update)
+	display := text
+	if len(display) > 2800 {
+		display = "…" + display[len(display)-2799:]
+	}
+	display = markdownToMrkdwn(display)
+
+	section := slackapi.NewSectionBlock(
+		slackapi.NewTextBlockObject("mrkdwn", display, false, false),
+		nil, nil,
+	)
+
+	if lr.ts == "" {
+		_, ts, err := lr.client.api.PostMessage(
+			lr.client.channel,
+			slackapi.MsgOptionBlocks(section),
+			slackapi.MsgOptionText(display, false),
+			slackapi.MsgOptionTS(lr.client.threadTS),
+		)
+		if err == nil {
+			lr.ts = ts
+			lr.client.trackPosted(ts)
+		}
+	} else {
+		lr.client.api.UpdateMessage(
+			lr.client.channel,
+			lr.ts,
+			slackapi.MsgOptionBlocks(section),
+			slackapi.MsgOptionText(display, false),
+		)
+	}
+	lr.lastUpdate = time.Now()
+}
+
+// Finish replaces the streaming message with the final complete response.
+// Deletes the live message and posts the full text with proper auto-split.
+func (lr *LiveResponse) Finish(text string) {
+	lr.mu.Lock()
+	ts := lr.ts
+	lr.ts = ""
+	lr.mu.Unlock()
+
+	if ts != "" {
+		lr.client.api.DeleteMessage(lr.client.channel, ts)
+	}
+	if text != "" {
+		lr.client.PostClaudeMessage(text)
+	}
 }
