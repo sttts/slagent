@@ -11,7 +11,16 @@ import (
 // Replies returns new replies since the last call, filtering by permissions.
 // It blocks until ctx is cancelled or replies arrive, polling at the configured interval.
 func (t *Thread) Replies(ctx context.Context) ([]Reply, error) {
+	timer := time.NewTimer(0) // fire immediately on first poll
+	defer timer.Stop()
+
 	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+
 		replies, err := t.pollOnce()
 		if err != nil {
 			return nil, err
@@ -19,12 +28,7 @@ func (t *Thread) Replies(ctx context.Context) ([]Reply, error) {
 		if len(replies) > 0 {
 			return replies, nil
 		}
-
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(t.config.pollInterval):
-		}
+		timer.Reset(t.config.pollInterval)
 	}
 }
 

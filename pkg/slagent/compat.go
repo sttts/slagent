@@ -178,7 +178,7 @@ func (c *compatTurn) writeTool(id, name, status, detail string) {
 		if t.detail != "" {
 			summary += ": " + t.detail
 		}
-		if t.status == "error" {
+		if t.status == ToolError {
 			summary += " ❌"
 		}
 		if i == len(c.tools)-1 {

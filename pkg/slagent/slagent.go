@@ -15,6 +15,13 @@ import (
 	slackapi "github.com/slack-go/slack"
 )
 
+// Tool status constants for use with Turn.Tool().
+const (
+	ToolRunning = "running"
+	ToolDone    = "done"
+	ToolError   = "error"
+)
+
 // Reply is a message from a thread participant.
 type Reply struct {
 	User   string // Display name
@@ -31,6 +38,7 @@ type threadConfig struct {
 	pollInterval      time.Duration
 	bufferSize        int
 	markdownConverter func(string) string
+	apiURL            string // base URL for native streaming API calls (testing)
 }
 
 func defaultConfig() threadConfig {
@@ -64,6 +72,11 @@ func WithBufferSize(n int) ThreadOption {
 // WithMarkdownConverter sets a custom markdown-to-mrkdwn converter.
 func WithMarkdownConverter(fn func(string) string) ThreadOption {
 	return func(c *threadConfig) { c.markdownConverter = fn }
+}
+
+// withAPIURL sets the base URL for native streaming API calls (testing only).
+func withAPIURL(url string) ThreadOption {
+	return func(c *threadConfig) { c.apiURL = url }
 }
 
 // NewSlackClient creates a *slack.Client with optional cookie support.

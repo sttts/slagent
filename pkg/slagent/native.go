@@ -8,11 +8,14 @@ import (
 	"sync"
 )
 
+const defaultSlackAPIURL = "https://slack.com/api/"
+
 // nativeTurn implements turnWriter using Slack's native streaming API
 // (chat.startStream / chat.appendStream / chat.stopStream).
 // Requires a bot token (xoxb-*).
 type nativeTurn struct {
 	token    string
+	apiURL   string // base URL for API calls (default: https://slack.com/api/)
 	channel  string
 	threadTS string
 	convert  func(string) string
@@ -28,9 +31,13 @@ type nativeTurn struct {
 	mu sync.Mutex
 }
 
-func newNativeTurn(token, channel, threadTS string, convert func(string) string, posted func(string), bufSize int) *nativeTurn {
+func newNativeTurn(token, apiURL, channel, threadTS string, convert func(string) string, posted func(string), bufSize int) *nativeTurn {
+	if apiURL == "" {
+		apiURL = defaultSlackAPIURL
+	}
 	return &nativeTurn{
 		token:    token,
+		apiURL:   apiURL,
 		channel:  channel,
 		threadTS: threadTS,
 		convert:  convert,
@@ -163,9 +170,9 @@ func (n *nativeTurn) writeTool(id, name, status, detail string) {
 
 	taskStatus := "in_progress"
 	switch status {
-	case "done":
+	case ToolDone:
 		taskStatus = "completed"
-	case "error":
+	case ToolError:
 		taskStatus = "failed"
 	}
 
@@ -214,12 +221,12 @@ func (n *nativeTurn) finish() error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
+	// Flush remaining text (may lazily start the stream)
+	n.flushText()
+
 	if !n.started {
 		return nil
 	}
-
-	// Flush remaining text
-	n.flushText()
 
 	_, err := n.callAPI("chat.stopStream", map[string]any{
 		"stream_id": n.streamID,
@@ -235,7 +242,7 @@ func (n *nativeTurn) callAPI(method string, params map[string]any) (map[string]a
 		return nil, err
 	}
 
-	req, err := http.NewRequest("POST", "https://slack.com/api/"+method, strings.NewReader(string(body)))
+	req, err := http.NewRequest("POST", n.apiURL+method, strings.NewReader(string(body)))
 	if err != nil {
 		return nil, err
 	}

@@ -108,7 +108,7 @@ func (t *Thread) NewTurn() Turn {
 	// Select backend based on token type
 	var w turnWriter
 	if isNativeToken(t.token) {
-		w = newNativeTurn(t.token, t.channel, threadTS, t.config.markdownConverter, posted, t.config.bufferSize)
+		w = newNativeTurn(t.token, t.config.apiURL, t.channel, threadTS, t.config.markdownConverter, posted, t.config.bufferSize)
 	} else {
 		w = newCompatTurn(t.api, t.channel, threadTS, t.config.markdownConverter, posted)
 	}
@@ -223,27 +223,18 @@ func (t *Thread) isAuthorized(userID string) bool {
 // handleCommand processes !open / !close commands. Returns true if the message was a command.
 func (t *Thread) handleCommand(userID, text string) bool {
 	cmd := strings.TrimSpace(text)
-
-	// Only the owner can run commands
-	t.mu.Lock()
-	isOwner := t.ownerID == "" || userID == t.ownerID
-	t.mu.Unlock()
-
-	if !isOwner {
+	if cmd != "!open" && cmd != "!close" {
 		return false
 	}
 
-	switch cmd {
-	case "!open":
-		t.mu.Lock()
-		t.openAccess = true
-		t.mu.Unlock()
-		return true
-	case "!close":
-		t.mu.Lock()
-		t.openAccess = false
-		t.mu.Unlock()
-		return true
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	// Only the owner can run commands
+	if t.ownerID != "" && userID != t.ownerID {
+		return false
 	}
-	return false
+
+	t.openAccess = cmd == "!open"
+	return true
 }
