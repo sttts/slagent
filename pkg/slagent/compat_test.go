@@ -186,17 +186,6 @@ func TestCompatActivityMaxLines(t *testing.T) {
 	}
 }
 
-func TestCompatTextLastNLines(t *testing.T) {
-	result := lastNLines("line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8", 6)
-	lines := strings.Split(result, "\n")
-	if len(lines) != 6 {
-		t.Errorf("lastNLines returned %d lines, want 6", len(lines))
-	}
-	if lines[0] != "line3" {
-		t.Errorf("first line = %q, want %q", lines[0], "line3")
-	}
-}
-
 func TestCompatFinishUpdatesTextMessage(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()

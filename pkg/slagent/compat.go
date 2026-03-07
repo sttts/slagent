@@ -258,8 +258,7 @@ func (c *compatTurn) writeText(text string) {
 // Must be called with lock held.
 func (c *compatTurn) postText() {
 	full := c.textBuf.String()
-	display := lastNLines(full, maxDisplayLines)
-	opt := textMsgOpts(display)
+	opt := textMsgOpts(full)
 
 	if c.textTS == "" {
 		_, ts, err := c.api.PostMessage(
@@ -354,13 +353,4 @@ func (c *compatTurn) finish() error {
 	}
 
 	return nil
-}
-
-// lastNLines returns the last n lines of text.
-func lastNLines(text string, n int) string {
-	lines := strings.Split(text, "\n")
-	if len(lines) > n {
-		lines = lines[len(lines)-n:]
-	}
-	return strings.Join(lines, "\n")
 }
