@@ -193,11 +193,22 @@ func (s *Session) readTurn() error {
 	s.ui.StartResponse()
 	var fullText strings.Builder
 	toolSeq := 0
+	lastToolID := ""
+	lastToolName := ""
+	lastToolDetail := ""
 
 	// Set up slagent turn for Slack streaming
 	var turn slagent.Turn
 	if s.thread != nil {
 		turn = s.thread.NewTurn()
+	}
+
+	// finishTool marks the last tool as done in Slack.
+	finishTool := func() {
+		if lastToolID != "" && turn != nil {
+			turn.Tool(lastToolID, lastToolName, slagent.ToolDone, lastToolDetail)
+			lastToolID = ""
+		}
 	}
 
 	for {
@@ -228,7 +239,7 @@ func (s *Session) readTurn() error {
 			}
 
 		case "thinking":
-			s.ui.Thinking()
+			s.ui.Thinking(evt.Text)
 
 			// Stream thinking to Slack
 			if turn != nil {
@@ -240,18 +251,27 @@ func (s *Session) readTurn() error {
 			if fullText.Len() == 0 && evt.Text != "" {
 				s.ui.StreamText(evt.Text)
 				fullText.WriteString(evt.Text)
+				if turn != nil {
+					turn.Text(evt.Text)
+				}
 			}
 
 		case "tool_use":
+			finishTool()
 			toolSeq++
-			toolID := fmt.Sprintf("t%d", toolSeq)
-			summary := formatTool(evt.ToolName, evt.ToolInput)
-			s.ui.ToolActivity(summary)
-			if turn != nil {
-				turn.Tool(toolID, evt.ToolName, slagent.ToolRunning, summary)
+			lastToolID = fmt.Sprintf("t%d", toolSeq)
+			lastToolName = evt.ToolName
+			lastToolDetail = toolDetail(evt.ToolName, evt.ToolInput)
+			s.ui.ToolActivity(formatTool(evt.ToolName, evt.ToolInput))
+
+			// Skip internal/interactive tools in Slack — these are
+			// between the terminal user and Claude, not for observers.
+			if turn != nil && !isInteractiveTool(evt.ToolName) {
+				turn.Tool(lastToolID, evt.ToolName, slagent.ToolRunning, lastToolDetail)
 			}
 
 		case claude.TypeResult:
+			finishTool()
 			s.ui.EndResponse()
 			if turn != nil {
 				turn.Finish()
@@ -259,7 +279,8 @@ func (s *Session) readTurn() error {
 			return nil
 
 		case claude.TypeSystem:
-			// Ignore system events (emitted at start of each turn)
+			// New turn — previous tool (if any) has completed
+			finishTool()
 		}
 	}
 }
@@ -315,6 +336,81 @@ func currentUser() string {
 	return u.Username
 }
 
+// isInteractiveTool returns true for tools that are interactive prompts
+// between Claude and the terminal user, not relevant for Slack observers.
+func isInteractiveTool(name string) bool {
+	switch name {
+	case "ExitPlanMode", "EnterPlanMode", "AskUserQuestion":
+		return true
+	}
+	return false
+}
+
+// toolDetail extracts the raw detail string for slagent (no emoji).
+func toolDetail(toolName, rawInput string) string {
+	var input map[string]interface{}
+	json.Unmarshal([]byte(rawInput), &input)
+
+	str := func(key string) string {
+		if v, ok := input[key]; ok {
+			if s, ok := v.(string); ok {
+				return s
+			}
+		}
+		return ""
+	}
+
+	switch toolName {
+	case "Read":
+		return filepath.Base(str("file_path"))
+	case "Write":
+		return filepath.Base(str("file_path"))
+	case "Edit":
+		return filepath.Base(str("file_path"))
+	case "Glob":
+		return str("pattern")
+	case "Grep":
+		p := str("pattern")
+		if path := str("path"); path != "" {
+			return p + " in " + filepath.Base(path)
+		}
+		return p
+	case "Bash":
+		cmd := str("command")
+		if len(cmd) > 60 {
+			cmd = cmd[:57] + "..."
+		}
+		return cmd
+	case "Agent":
+		if d := str("description"); d != "" {
+			return d
+		}
+		p := str("prompt")
+		if len(p) > 60 {
+			p = p[:57] + "..."
+		}
+		return p
+	case "WebFetch":
+		return str("url")
+	case "WebSearch":
+		return str("query")
+	case "ExitPlanMode":
+		return "ready for approval"
+	case "EnterPlanMode":
+		return "switching to plan mode"
+	case "AskUserQuestion":
+		return str("question")
+	case "TodoWrite", "TaskCreate", "TaskUpdate":
+		return str("subject")
+	default:
+		s := rawInput
+		if len(s) > 60 {
+			s = s[:57] + "..."
+		}
+		return s
+	}
+}
+
 // formatTool returns a pretty one-line summary of a tool use.
 func formatTool(toolName, rawInput string) string {
 	var input map[string]interface{}
@@ -365,6 +461,12 @@ func formatTool(toolName, rawInput string) string {
 		return fmt.Sprintf("🔎 %s", str("query"))
 	case "TodoWrite", "TaskCreate", "TaskUpdate":
 		return fmt.Sprintf("📋 %s", str("subject"))
+	case "ExitPlanMode":
+		return "📋 ready for approval"
+	case "EnterPlanMode":
+		return "📋 switching to plan mode"
+	case "AskUserQuestion":
+		return fmt.Sprintf("❓ %s", str("question"))
 	default:
 		summary := rawInput
 		if len(summary) > 60 {
