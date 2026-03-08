@@ -12,6 +12,7 @@ import (
 
 	"github.com/sttts/slagent"
 	"github.com/sttts/slagent/channel"
+	"github.com/sttts/slagent/cmd/slaude/internal/perms"
 	"github.com/sttts/slagent/cmd/slaude/internal/session"
 	"github.com/sttts/slagent/credential"
 )
@@ -350,6 +351,26 @@ func extractPassthroughArgs(args []string) []string {
 }
 
 func main() {
+	// Hidden subcommand: _mcp-permissions (started by Claude as MCP server)
+	if len(os.Args) >= 2 && os.Args[1] == "_mcp-permissions" {
+		var socketPath string
+		args := os.Args[2:]
+		for i, a := range args {
+			if a == "--socket" && i+1 < len(args) {
+				socketPath = args[i+1]
+			}
+		}
+		if socketPath == "" {
+			fmt.Fprintln(os.Stderr, "usage: slaude _mcp-permissions --socket PATH")
+			os.Exit(1)
+		}
+		if err := perms.RunServer(socketPath); err != nil {
+			fmt.Fprintf(os.Stderr, "mcp server: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	// Extract pass-through args before kong parsing
 	passthrough := extractPassthroughArgs(os.Args[1:])
 

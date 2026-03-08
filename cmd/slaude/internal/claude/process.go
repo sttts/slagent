@@ -98,47 +98,6 @@ func (p *Process) Send(content string) error {
 	})
 }
 
-// controlResponse is the JSON written to Claude's stdin to answer a control_request.
-type controlResponse struct {
-	Type      string              `json:"type"`
-	RequestID string              `json:"request_id"`
-	Response  controlResponseBody `json:"response"`
-}
-
-type controlResponseBody struct {
-	Subtype  string              `json:"subtype"`
-	Response controlResponseData `json:"response"`
-}
-
-type controlResponseData struct {
-	Behavior string `json:"behavior"`
-	Message  string `json:"message,omitempty"`
-}
-
-// AllowTool sends a control_response allowing a tool use.
-func (p *Process) AllowTool(requestID string) error {
-	return p.stdin.Encode(controlResponse{
-		Type:      "control_response",
-		RequestID: requestID,
-		Response: controlResponseBody{
-			Subtype:  "success",
-			Response: controlResponseData{Behavior: "allow"},
-		},
-	})
-}
-
-// DenyTool sends a control_response denying a tool use.
-func (p *Process) DenyTool(requestID, message string) error {
-	return p.stdin.Encode(controlResponse{
-		Type:      "control_response",
-		RequestID: requestID,
-		Response: controlResponseBody{
-			Subtype:  "success",
-			Response: controlResponseData{Behavior: "deny", Message: message},
-		},
-	})
-}
-
 // ReadEvent reads the next event from Claude's stdout.
 // Returns nil, nil at EOF.
 func (p *Process) ReadEvent() (*Event, error) {

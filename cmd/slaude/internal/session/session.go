@@ -17,6 +17,7 @@ import (
 
 	"github.com/sttts/slagent"
 	"github.com/sttts/slagent/cmd/slaude/internal/claude"
+	"github.com/sttts/slagent/cmd/slaude/internal/perms"
 	"github.com/sttts/slagent/cmd/slaude/internal/terminal"
 	"github.com/sttts/slagent/credential"
 )
@@ -195,6 +196,23 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 		} else {
 			extraArgs = append(extraArgs, "--system-prompt", slackCtx)
 		}
+	}
+
+	// Start permission listener for Slack-based tool approval
+	if sess.thread != nil {
+		slaudeBin, _ := os.Executable()
+		permListener, err := perms.NewListener(sess.handlePermission)
+		if err != nil {
+			return nil, fmt.Errorf("start permission listener: %w", err)
+		}
+		permListener.Start()
+		defer permListener.Stop()
+
+		// Tell Claude to use our MCP permission server
+		extraArgs = append(extraArgs,
+			"--mcp-config", permListener.MCPConfig(slaudeBin),
+			"--permission-prompt-tool", perms.PermissionToolRef(),
+		)
 	}
 
 	// Start Claude with pass-through args
@@ -436,9 +454,6 @@ func (s *Session) readTurn() error {
 				}
 			}
 
-		case claude.TypeControlRequest:
-			s.handlePermission(evt, turn)
-
 		case claude.TypeResult:
 			finishTool()
 			s.ui.EndResponse()
@@ -457,35 +472,24 @@ func (s *Session) readTurn() error {
 // permissionTimeout is how long to wait for the owner to approve/deny a tool.
 const permissionTimeout = 5 * time.Minute
 
-// handlePermission processes a control_request by posting to Slack and polling for approval.
-func (s *Session) handlePermission(evt *claude.Event, turn slagent.Turn) {
-	detail := toolDetail(evt.ToolName, evt.ToolInput)
-	prompt := fmt.Sprintf("🔐 *Permission request*: %s", evt.ToolName)
+// handlePermission processes a permission request from the MCP server by posting
+// to Slack and polling for owner approval via reactions.
+func (s *Session) handlePermission(req *perms.PermissionRequest) *perms.PermissionResponse {
+	detail := toolDetail(req.ToolName, string(req.Input))
+	prompt := fmt.Sprintf("🔐 *Permission request*: %s", req.ToolName)
 	if detail != "" {
 		prompt += ": " + detail
 	}
 
 	// Show in terminal
-	s.ui.ToolActivity(fmt.Sprintf("🔐 Permission: %s: %s", evt.ToolName, detail))
-
-	// If no Slack thread, auto-deny (no way to approve)
-	if s.thread == nil {
-		s.proc.DenyTool(evt.RequestID, "No Slack thread to approve permissions")
-		s.ui.ToolActivity("❌ Denied (no Slack thread)")
-		return
-	}
-
-	// Show in Slack activity
-	if turn != nil {
-		turn.Status(fmt.Sprintf("🔐 %s: %s — waiting for approval", evt.ToolName, detail))
-	}
+	s.ui.ToolActivity(fmt.Sprintf("🔐 Permission: %s: %s", req.ToolName, detail))
 
 	// Post permission prompt with approve/deny reactions
 	reactions := []string{"white_check_mark", "x"}
 	msgTS, err := s.thread.PostPrompt(prompt, reactions)
 	if err != nil {
-		s.proc.DenyTool(evt.RequestID, "Failed to post permission prompt to Slack")
-		return
+		s.ui.ToolActivity("❌ Denied (failed to post to Slack)")
+		return &perms.PermissionResponse{Behavior: "deny", Message: "failed to post permission prompt to Slack"}
 	}
 
 	// Poll for owner reaction
@@ -498,28 +502,17 @@ func (s *Session) handlePermission(evt *claude.Event, turn slagent.Turn) {
 		}
 		switch selected {
 		case "white_check_mark":
-			s.proc.AllowTool(evt.RequestID)
-			s.ui.ToolActivity(fmt.Sprintf("✅ Approved: %s: %s", evt.ToolName, detail))
-			if turn != nil {
-				turn.Status(fmt.Sprintf("✅ %s: %s", evt.ToolName, detail))
-			}
-			return
+			s.ui.ToolActivity(fmt.Sprintf("✅ Approved: %s: %s", req.ToolName, detail))
+			return &perms.PermissionResponse{Behavior: "allow"}
 		case "x":
-			s.proc.DenyTool(evt.RequestID, "Denied by owner via Slack")
-			s.ui.ToolActivity(fmt.Sprintf("❌ Denied: %s: %s", evt.ToolName, detail))
-			if turn != nil {
-				turn.Status(fmt.Sprintf("❌ %s: %s", evt.ToolName, detail))
-			}
-			return
+			s.ui.ToolActivity(fmt.Sprintf("❌ Denied: %s: %s", req.ToolName, detail))
+			return &perms.PermissionResponse{Behavior: "deny", Message: "denied by owner via Slack"}
 		}
 	}
 
 	// Timeout — auto-deny
-	s.proc.DenyTool(evt.RequestID, "Permission request timed out")
-	s.ui.ToolActivity(fmt.Sprintf("⏰ Timed out: %s: %s", evt.ToolName, detail))
-	if turn != nil {
-		turn.Status(fmt.Sprintf("⏰ %s: %s — timed out", evt.ToolName, detail))
-	}
+	s.ui.ToolActivity(fmt.Sprintf("⏰ Timed out: %s: %s", req.ToolName, detail))
+	return &perms.PermissionResponse{Behavior: "deny", Message: "permission request timed out"}
 }
 
 // waitForReplies blocks until Slack replies are available or context is cancelled.
