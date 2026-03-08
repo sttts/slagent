@@ -140,6 +140,86 @@ func (t *Thread) Post(text string) error {
 	return nil
 }
 
+// PostPrompt posts a message and adds reaction emojis for interactive responses.
+// Returns the message timestamp for use with PollReaction.
+// Reaction names use Slack short codes without colons (e.g. "white_check_mark", "one").
+func (t *Thread) PostPrompt(text string, reactions []string) (string, error) {
+	t.mu.Lock()
+	threadTS := t.threadTS
+	t.mu.Unlock()
+
+	if threadTS == "" {
+		return "", fmt.Errorf("no active thread")
+	}
+
+	_, ts, err := t.api.PostMessage(
+		t.channel,
+		slackapi.MsgOptionText(text, false),
+		slackapi.MsgOptionTS(threadTS),
+	)
+	if err != nil {
+		return "", err
+	}
+
+	t.mu.Lock()
+	t.postedTS[ts] = true
+	t.mu.Unlock()
+
+	// Pre-add reaction emojis as clickable options (session/user tokens only).
+	// Bot tokens will use Block Kit buttons via Socket Mode instead.
+	if !isNativeToken(t.token) {
+		for _, r := range reactions {
+			t.api.AddReaction(r, slackapi.ItemRef{
+				Channel:   t.channel,
+				Timestamp: ts,
+			})
+		}
+	}
+
+	return ts, nil
+}
+
+// PollReaction checks which pre-added reaction the owner has clicked (removed).
+// All expected reactions are pre-added by us (the owner via session token).
+// When the owner clicks one, Slack toggles it off. We detect selection by
+// checking which expected reaction no longer has the owner in its user list.
+// Other users adding reactions is a noop — only the owner's removal counts.
+// Returns the selected reaction name, or "" if no selection yet.
+func (t *Thread) PollReaction(msgTS string, expected []string) (string, error) {
+	item, err := t.api.GetReactions(slackapi.ItemRef{
+		Channel:   t.channel,
+		Timestamp: msgTS,
+	}, slackapi.NewGetReactionsParameters())
+	if err != nil {
+		return "", fmt.Errorf("get reactions: %w", err)
+	}
+
+	// Build map: reaction name → whether the owner is still in the user list
+	ownerPresent := make(map[string]bool)
+	for _, r := range item.Reactions {
+		for _, u := range r.Users {
+			if u == t.ownerID {
+				ownerPresent[r.Name] = true
+				break
+			}
+		}
+	}
+
+	// The reaction where the owner is no longer present is the selection
+	for _, r := range expected {
+		if !ownerPresent[r] {
+			return r, nil
+		}
+	}
+
+	return "", nil
+}
+
+// OwnerID returns the configured owner user ID.
+func (t *Thread) OwnerID() string {
+	return t.ownerID
+}
+
 // PostBlocks sends a message with blocks in the thread.
 func (t *Thread) PostBlocks(fallback string, blocks ...slackapi.Block) error {
 	t.mu.Lock()
