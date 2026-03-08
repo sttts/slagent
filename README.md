@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="contrib/logo.png" width="200" alt="slagent logo">
+  <img src="contrib/logo.png" alt="slagent logo">
 </p>
 
 # slagent
