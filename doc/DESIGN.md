@@ -19,18 +19,28 @@ pairplan bridges Claude Code planning sessions with Slack, letting remote team m
 ### Package Structure
 
 ```
-cmd/pairplan/main.go        CLI entry point, command routing
-pkg/claude/events.go        Stream-JSON event type definitions and parser
-pkg/claude/process.go       Claude Code subprocess lifecycle
-pkg/session/session.go      Session orchestration (wires claude + terminal + slack)
-pkg/terminal/terminal.go    Terminal UI (prompts, streaming output)
-pkg/slack/client.go         Slack API wrapper (Block Kit, live thinking, polling)
-pkg/slack/extract/          Token extraction from local Slack desktop app
-  extract.go                  Top-level Extract() orchestrator
-  paths.go                    Platform-specific Slack data directory detection
-  leveldb.go                  LevelDB token extraction
-  cookie.go                   SQLite cookie database reading
-  decrypt.go                  Chromium cookie decryption (AES-CBC, PBKDF2)
+cmd/pairplan/main.go          CLI entry point, command routing
+cmd/slagent-demo/main.go      Standalone demo exercising slagent Slack UI
+pkg/claude/events.go          Stream-JSON event type definitions and parser
+pkg/claude/process.go         Claude Code subprocess lifecycle
+pkg/session/session.go        Session orchestration (wires claude + terminal + slagent)
+pkg/terminal/terminal.go      Terminal UI (streaming output, tool/thinking lines)
+pkg/slagent/                  Slack agent streaming (dual backend)
+  slagent.go                    Package root: token types, Thread options, client factory
+  thread.go                     Thread lifecycle: Start, Resume, NewTurn, Post*, Replies
+  turn.go                       Turn interface + turnImpl delegation wrapper
+  compat.go                     Compat backend (xoxc-/xoxp-): postMessage/update
+  native.go                     Native backend (xoxb-): startStream/appendStream/stopStream
+  reply.go                      Thread reply polling + authorization
+  mrkdwn.go                     Markdown-to-mrkdwn converter, splitAtLines
+pkg/slack/                    Slack credentials and channel/user resolution
+  client.go                     Credential loading, channel/user lookup, user search
+  extract/                      Token extraction from local Slack desktop app
+    extract.go                    Top-level Extract() orchestrator
+    paths.go                      Platform-specific Slack data directory detection
+    leveldb.go                    LevelDB token extraction
+    cookie.go                     SQLite cookie database reading
+    decrypt.go                    Chromium cookie decryption (AES-CBC, PBKDF2)
 ```
 
 ## Claude Code Integration
@@ -39,11 +49,13 @@ pkg/slack/extract/          Token extraction from local Slack desktop app
 
 Claude Code is launched as a subprocess with flags:
 - `--output-format stream-json` — structured event output
+- `--input-format stream-json` — structured JSON input
 - `--verbose` — required for stream-json to work
 - `-p` — piped mode (reads from stdin)
 - `--permission-mode plan` — default permission level
+- `--include-partial-messages` — get intermediate assistant events
 
-The `CLAUDE_CODE` environment variable is unset to prevent nested-invocation detection.
+The `CLAUDECODE` environment variable is unset to prevent nested-invocation detection.
 
 ### Event Stream
 
@@ -59,20 +71,207 @@ system → stream_event(message_start) → stream_event(content_block_start)
 Events are parsed into high-level `Event` structs:
 - `text_delta` — streaming text content
 - `thinking` — thinking phase (with accumulated text for live display)
-- `tool_use` — tool invocation (name + input summary)
+- `tool_use` — tool invocation (name + input JSON)
 - `assistant` — complete message (fallback when no streaming occurred)
 - `result` — turn boundary, signals response is complete
 
 ### Turn Boundaries
 
 The `result` event marks the end of a turn. At this point:
-1. The complete response text is posted to Slack
+1. The slagent turn is finalized (text message updated to full content, activity frozen)
 2. Queued Slack replies are checked and injected as the next user message
-3. The terminal prompt is shown again
+3. The session waits for more Slack feedback
 
-## Slack Integration
+### Tool Lifecycle
 
-### Authentication Model
+Tools are tracked across their lifecycle in session.go:
+
+1. `tool_use` event → `ToolRunning` posted to slagent, shown in terminal
+2. Next `tool_use`/`system`/`result` event → previous tool marked `ToolDone`
+3. `finishTool()` helper called at each boundary to close the previous tool
+
+Tool display uses two functions:
+- `formatTool()` — terminal display with emoji prefix (📄 Read, 💻 Bash, etc.)
+- `toolDetail()` — raw detail string for slagent (no emoji, just file/pattern/command)
+
+### Interactive Tools
+
+Some tools are interactive prompts between Claude and the terminal user:
+- `ExitPlanMode` — Claude requests to leave plan mode
+- `EnterPlanMode` — Claude requests to enter plan mode
+- `AskUserQuestion` — Claude asks a question with options
+
+These are posted to Slack as prominent standalone messages (not activity lines)
+so thread observers can see what Claude is asking for. The actual approval/response
+happens at the terminal where Claude Code handles the prompt directly.
+
+**Planned: Socket Mode integration** for Block Kit buttons that let the Slack
+thread owner approve/reject directly from Slack (see "Interactive Buttons" below).
+
+## slagent — Slack Agent Streaming
+
+The `slagent` package provides a unified streaming interface for mirroring agent
+sessions to Slack. It abstracts two backends behind a common `Turn` interface.
+
+### Turn Interface
+
+```go
+type Turn interface {
+    Thinking(text string)                    // append thinking content
+    Tool(id, name, status, detail string)    // report tool activity
+    Text(text string)                        // append response text
+    Status(text string)                      // transient status line
+    Finish() error                           // finalize the turn
+}
+```
+
+### Backend Selection
+
+The backend is chosen automatically based on token prefix:
+
+| Token    | Backend | Mechanism |
+|----------|---------|-----------|
+| `xoxb-`  | Native  | `chat.startStream` / `appendStream` / `stopStream` |
+| `xoxc-`  | Compat  | `chat.postMessage` / `chat.update` (1/sec throttle) |
+| `xoxp-`  | Compat  | same as xoxc- |
+
+### Compat Backend (xoxc-/xoxp-)
+
+Uses standard Slack Web API. Two message types per turn:
+
+1. **Activity message** — single context block, updated in-place, showing thinking + tools + status (max 6 lines). Tools tracked via `toolIndex` map for in-place updates. Icons: tool-specific when running (📄 🔍 💻), ✅ when done, ❌ on error.
+
+2. **Text message** — posted as `MsgOptionText` with code block wrapping:
+   ```
+   🤖
+   ```
+   full plan/response text here
+   ```
+   ```
+   Embedded triple-backtick fences in Claude's output are escaped to `'''`.
+   Full text is shown during streaming (no truncation — Slack code blocks are
+   not collapsed with "read more").
+
+**Throttling and debounce:**
+- Updates throttled to 1/sec per message (Slack rate limit)
+- `forceFlushText()` bypasses throttle when tools/thinking start (ensures text is visible before activity begins)
+- Debounce timers (`time.AfterFunc`, 1s) flush remaining content after idle period — handles text-only turns where no tool/thinking event triggers a flush
+
+### Native Backend (xoxb-)
+
+Uses Slack's native streaming API for real-time updates:
+- `chat.startStream` — opens a stream, returns `stream_id`
+- `chat.appendStream` — sends chunks (markdown_text, task_update)
+- `chat.stopStream` — finalizes the stream
+
+Text is buffered and flushed when the buffer exceeds `bufferSize` (default 256 bytes).
+Thinking and tools are sent as `task_update` chunks with status tracking.
+
+### Thread Lifecycle
+
+```go
+thread := slagent.NewThread(client, token, channelID, opts...)
+thread.Start("Planning: redesign auth")   // post parent message, start polling
+// or
+thread.Resume("1700000001.000000")         // resume existing thread
+
+turn := thread.NewTurn()                   // start a new response turn
+turn.Thinking("analyzing code...")
+turn.Tool("t1", "Read", "running", "main.go")
+turn.Tool("t1", "Read", "done", "main.go")
+turn.Text("Here is my analysis...")
+turn.Finish()
+
+thread.Post("Status update")              // standalone message
+thread.PostUser("alice", "What about X?") // user message with avatar
+thread.PostMarkdown(planText)             // content in code block
+```
+
+### Reply Polling and Authorization
+
+`thread.PollReplies()` / `thread.Replies(ctx)` poll `conversations.replies`:
+
+- Skip parent message and already-seen messages (tracked via `lastTS`)
+- Skip messages we posted (tracked via `postedTS` map)
+- Skip bot messages (`BotID != ""`)
+- Handle `!open` / `!close` commands (toggle open access)
+- Check authorization: owner only by default, all participants if open access
+
+User display names are resolved via `users.info` and cached.
+
+## Terminal Output
+
+The terminal UI (`pkg/terminal`) provides simple line-based output:
+
+- **Thinking**: each thinking delta prints on its own line: `  💭 analyzing the codebase...`
+- **Tools**: each tool prints on its own line: `  📄 main.go`, `  💻 go build`
+- **Text**: streamed inline after the `🤖 Claude:` prefix
+- **No in-place updates**: every line is final (no cursor movement, no clearLine)
+
+## Session Orchestration
+
+The `session.Session` struct wires everything together:
+
+```
+Main Loop:
+  1. Send initial topic to Claude (skip on resume)
+  2. Read turn:
+     a. Stream text to terminal + slagent turn
+     b. Show thinking lines in terminal + slagent turn
+     c. Show tool activity in terminal + slagent turn
+     d. Post interactive tools as standalone Slack messages
+     e. Track tool lifecycle (running → done)
+     f. On result: finalize turn, return
+  3. Start Slack poller (background goroutine)
+  4. Wait for Slack replies (blocking)
+  5. Show replies in terminal, format as [Team feedback from Slack]
+  6. Send to Claude via stdin
+  7. Read turn (go to step 2)
+```
+
+## Interactive Buttons (planned)
+
+Interactive tools (ExitPlanMode, AskUserQuestion, EnterPlanMode) should be shown
+in Slack with Block Kit buttons that the session owner can click to approve/reject.
+
+### Constraint
+
+Block Kit button clicks send an interaction payload to a server endpoint.
+pairplan is a CLI without a persistent server. Two viable approaches:
+
+### Approach: Slack Socket Mode
+
+Socket Mode delivers interaction payloads over WebSocket — no public URL needed.
+
+Requirements:
+- A Slack app with Socket Mode enabled
+- Bot token (`xoxb-`) for API calls
+- App-level token (`xapp-`) for the WebSocket connection
+
+Architecture:
+```
+┌──────────┐  WebSocket   ┌──────────┐  interaction  ┌──────────┐
+│  Slack   │ ──────────> │ pairplan │ <──────────── │  User    │
+│ Platform │              │SocketMode│   clicks btn  │ in Slack │
+└──────────┘              │ listener │               └──────────┘
+                          └──────────┘
+```
+
+Flow:
+1. Claude emits ExitPlanMode → pairplan posts Block Kit message with buttons
+2. Owner clicks "Approve" → Slack sends interaction payload over WebSocket
+3. pairplan receives payload, verifies owner, sends approval to Claude stdin
+4. Message updated to show "✅ Approved by @owner"
+
+Button layout:
+- ExitPlanMode: `[✅ Approve] [❌ Reject]`
+- EnterPlanMode: `[✅ Approve] [❌ Reject]`
+- AskUserQuestion: one button per `allowedPrompts` option
+
+Limitation: Only available with bot tokens (xoxb-). Session tokens (xoxc-)
+fall back to text-only prompts in Slack with terminal-only interaction.
+
+## Authentication Model
 
 Three token types are supported, stored in `~/.config/pairplan/credentials.json`:
 
@@ -82,123 +281,29 @@ Three token types are supported, stored in `~/.config/pairplan/credentials.json`
 | Bot       | xoxb-  | Slack app OAuth | Yes |
 | User      | xoxp-  | Slack app OAuth (user scopes) | Yes |
 
-#### Session Token Architecture
+### Session Token Architecture
 
-Session tokens (`xoxc-`) are the same tokens the Slack desktop app uses internally. They require a companion cookie (`xoxd-`) that must be sent with every API request.
+Session tokens (`xoxc-`) are the same tokens the Slack desktop app uses internally.
+They require a companion cookie (`xoxd-`) that must be sent with every API request.
 
-The cookie is injected via a custom `http.Client` wrapper:
+The cookie is injected via a custom `http.Client` wrapper (`cookieHTTPClient`)
+passed to the slack-go library via `slack.OptionHTTPClient()`.
 
-```go
-type cookieHTTPClient struct {
-    inner  *http.Client
-    cookie string
-}
-
-func (c *cookieHTTPClient) Do(req *http.Request) (*http.Response, error) {
-    req.Header.Set("Cookie", fmt.Sprintf("d=%s", c.cookie))
-    return c.inner.Do(req)
-}
-```
-
-This is passed to the slack-go library via `slack.OptionHTTPClient()`.
-
-#### Token Extraction Process
+### Token Extraction Process
 
 1. **Find Slack data directory** — checks platform-specific paths:
    - macOS App Store: `~/Library/Containers/com.tinyspeck.slackmacgap/.../Slack/`
    - macOS direct: `~/Library/Application Support/Slack/`
    - Linux: `~/.config/Slack/`
 
-2. **Extract xoxc token from LevelDB** — Slack stores workspace config in a LevelDB database at `Local Storage/leveldb/`. The database is copied to a temp directory first (Slack holds the lock file). The `localConfig_v2` key contains JSON with `teams.WORKSPACE_ID.token` fields.
+2. **Extract xoxc token from LevelDB** — Slack stores workspace config in a
+   LevelDB database at `Local Storage/leveldb/`. The database is copied to a
+   temp directory first (Slack holds the lock file). Values may have byte prefixes
+   or UTF-16LE encoding that must be handled.
 
-   Encoding challenges:
-   - Values may have a 1-byte prefix (`\x00`, `\x01`, `\x02`) that must be stripped
-   - Some Slack versions store values in UTF-16LE (detected by NUL byte frequency)
-
-3. **Decrypt xoxd cookie from SQLite** — The `Cookies` file is a Chromium cookie database (SQLite). The `d` cookie for `.slack.com` is encrypted using:
-   - **macOS**: Passphrase from Keychain (`security find-generic-password -s "Slack Safe Storage" -w`), PBKDF2-SHA1 with salt `saltysalt`, 1003 iterations, 16-byte key, AES-128-CBC with IV of 16 space bytes
-   - **Linux**: Passphrase from GNOME Keyring (`secret-tool lookup application Slack`) or fallback `peanuts`, PBKDF2-SHA1 with 1 iteration, same AES-CBC
-
-   The encrypted blob has a 3-byte prefix (`v10`) that is stripped before decryption. PKCS#7 padding is removed after decryption.
-
-### Message Formatting
-
-All messages use Slack's Block Kit for structured rendering:
-
-| Message Type | Block Structure |
-|---|---|
-| Thread parent | Header block: "Planning session: {topic}" |
-| Claude response (short, ≤3000 chars) | Section block with mrkdwn |
-| Claude response (long, per chunk) | Section block with code block wrapping |
-| User message | Context block (user name) + Section block (text) |
-| Tool activity | Context block with tool summary |
-| Thinking indicator | Context block, live-updated |
-| Session end | Section block + Divider |
-
-All Block Kit messages include a plain-text fallback for notifications and accessibility.
-
-### Live Thinking Indicator
-
-During Claude's thinking phase, a message is posted to Slack and updated in-place:
-
-1. First `thinking` event → `chat.postMessage` with "thinking..." context block
-2. Subsequent `thinking` events → `chat.update` with accumulated thinking text (throttled to 1 update/second, last 2000 chars shown)
-3. First `text_delta` or `tool_use` or `result` event → `chat.delete` removes the thinking message
-
-The `LiveThinking` struct is goroutine-safe with its own mutex.
-
-### Auto-Split
-
-Slack's Block Kit text limit is approximately 3000 characters per text object. Long Claude responses are handled:
-
-- If ≤ 3000 chars: posted as a single Section block with mrkdwn formatting
-- If > 3000 chars: split at line boundaries into ≤3000 char chunks, each posted as a separate message wrapped in a code block (triple backticks) to preserve formatting
-
-The `splitAtLines()` function finds the last newline within the limit, falling back to a hard cut if no newline exists.
-
-### Reply Polling
-
-A background goroutine polls `conversations.replies` every 3 seconds. New messages are queued and injected at the next turn boundary.
-
-Message filtering:
-- **Bot tokens**: skip messages with a `BotID` (our bot's messages)
-- **User/Session tokens**: skip messages from `ownUserID` (resolved via `auth.test` at startup)
-
-User display names are resolved via `users.info` and cached for the session.
-
-### Channel Support
-
-The `channels` command lists all accessible conversations:
-- Public channels (`public_channel`)
-- Private channels (`private_channel`)
-- Group DMs / multi-party IMs (`mpim`)
-- Direct messages (`im`)
-
-This is particularly useful for finding private group chat IDs, which aren't visible in the Slack UI's URL.
-
-## Session Orchestration
-
-The `session.Session` struct wires everything together:
-
-```
-Main Loop:
-  1. Show terminal prompt
-  2. Read user input
-  3. Handle /commands (quit, status)
-  4. Mirror user message to Slack (async)
-  5. Send to Claude via stdin
-  6. Read turn:
-     a. Start LiveThinking on first thinking event
-     b. Update LiveThinking with thinking text
-     c. Stop LiveThinking on first text_delta
-     d. Stream text to terminal
-     e. Post tool activity to Slack (async)
-     f. On result: post complete text to Slack, return
-  7. Inject queued Slack replies (if any → send to Claude → read another turn)
-  8. Loop to step 1
-```
-
-Slack operations (posting messages, tool activity) are done in goroutines to avoid blocking the terminal output.
+3. **Decrypt xoxd cookie from SQLite** — The `Cookies` file is a Chromium cookie
+   database. The `d` cookie for `.slack.com` is encrypted using platform-specific
+   key derivation (macOS: Keychain + PBKDF2, Linux: GNOME Keyring + PBKDF2).
 
 ## Credentials Storage
 
