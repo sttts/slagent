@@ -226,7 +226,7 @@ func TestCompatTextFlushedBeforeTool(t *testing.T) {
 
 	// Stream text character-by-character (like real deltas).
 	// First char creates the message, rest are throttled (within 1s).
-	// Without forceFlushText, the message would show only "G".
+	// Without finalizeText, the message would show only "G".
 	fullText := "Good — I have a thorough understanding of the codebase now."
 	for _, ch := range fullText {
 		turn.Text(string(ch))
@@ -683,6 +683,165 @@ func TestCompatMarkQuestionMultipleQuestionMarks(t *testing.T) {
 	}
 	if !strings.Contains(content, "clarify ❓") {
 		t.Errorf("last ? should be replaced with ❓, got: %q", content)
+	}
+}
+
+func TestCompatActivityDeletedWhenTextFollows(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread.Resume("1700000001.000000")
+
+	turn := thread.NewTurn()
+	turn.Tool("t1", "Read", ToolRunning, "main.go")
+	turn.Tool("t1", "Read", ToolDone, "main.go")
+
+	// Activity message should exist before text
+	active := mock.activeMessages()
+	activityCount := 0
+	for _, m := range active {
+		if m.Text == "activity" {
+			activityCount++
+		}
+	}
+	if activityCount != 1 {
+		t.Fatalf("expected 1 activity message before text, got %d", activityCount)
+	}
+
+	// Text arrives — activity should be deleted
+	turn.Text("I read the file.")
+	turn.Finish()
+
+	active = mock.activeMessages()
+	for _, m := range active {
+		if m.Text == "activity" {
+			t.Error("activity message should be deleted when text follows")
+		}
+	}
+
+	// Text message should exist
+	textFound := false
+	for _, m := range active {
+		if m.Text != "activity" && strings.Contains(m.blockText(), "I read the file") {
+			textFound = true
+		}
+	}
+	if !textFound {
+		t.Error("text message should exist after activity deletion")
+	}
+}
+
+func TestCompatActivityPersistsWithoutText(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread.Resume("1700000001.000000")
+
+	// Tool-only turn (no text follows)
+	turn := thread.NewTurn()
+	turn.Tool("t1", "Read", ToolRunning, "main.go")
+	turn.Tool("t1", "Read", ToolDone, "main.go")
+	turn.Finish()
+
+	// Activity should persist (no text to delete it)
+	active := mock.activeMessages()
+	activityFound := false
+	for _, m := range active {
+		if m.Text == "activity" {
+			activityFound = true
+		}
+	}
+	if !activityFound {
+		t.Error("activity should persist when no text follows")
+	}
+
+	// No deletions
+	for _, m := range mock.postedMessages() {
+		if m.Deleted {
+			t.Error("no messages should be deleted in tool-only turn")
+		}
+	}
+}
+
+func TestCompatActivityNotRecreatedAfterDeletion(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread.Resume("1700000001.000000")
+
+	turn := thread.NewTurn()
+	turn.Tool("t1", "Read", ToolRunning, "main.go")
+
+	// Text arrives — deletes activity
+	turn.Text("Done.")
+
+	// ToolDone update should NOT recreate activity
+	turn.Tool("t1", "Read", ToolDone, "main.go")
+	turn.Finish()
+
+	active := mock.activeMessages()
+	for _, m := range active {
+		if m.Text == "activity" {
+			t.Error("activity should not be recreated after deletion by text")
+		}
+	}
+}
+
+func TestCompatNewToolAfterTextStartsFreshActivity(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread.Resume("1700000001.000000")
+
+	turn := thread.NewTurn()
+
+	// First tool → activity posted
+	turn.Tool("t1", "Read", ToolRunning, "main.go")
+
+	// Text → activity deleted
+	turn.Text("Read the file.")
+
+	// New tool (different ID) → fresh activity should be created
+	turn.Tool("t2", "Grep", ToolRunning, "pattern")
+	turn.Finish()
+
+	active := mock.activeMessages()
+	activityFound := false
+	for _, m := range active {
+		if m.Text == "activity" {
+			activityFound = true
+			content := m.blockText()
+			if !strings.Contains(content, "Grep") {
+				t.Errorf("new activity should show Grep, got: %q", content)
+			}
+		}
+	}
+	if !activityFound {
+		t.Error("new tool after text should start fresh activity")
+	}
+}
+
+func TestCompatThinkingThenTextDeletesActivity(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread.Resume("1700000001.000000")
+
+	turn := thread.NewTurn()
+	turn.Thinking("analyzing...")
+	turn.Text("Here is my analysis.")
+	turn.Finish()
+
+	active := mock.activeMessages()
+	for _, m := range active {
+		if m.Text == "activity" {
+			t.Error("activity (thinking) should be deleted when text follows")
+		}
 	}
 }
 

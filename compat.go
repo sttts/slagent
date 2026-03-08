@@ -32,9 +32,10 @@ type compatTurn struct {
 	thinkBuf   strings.Builder // accumulated thinking text
 	activities []string        // discrete lines: tools, status
 	toolIndex  map[string]int  // tool ID → index in activities
-	activityTS    string          // single message timestamp
-	actUpdate     time.Time       // throttle
-	activityTimer *time.Timer    // debounce timer for activity flush
+	activityTS      string       // single message timestamp
+	actUpdate       time.Time    // throttle
+	activityTimer   *time.Timer  // debounce timer for activity flush
+	activityDeleted bool         // activity was deleted by text; don't recreate
 
 	// Text streaming
 	textBuf    strings.Builder
@@ -125,6 +126,9 @@ func (c *compatTurn) flushActivity() {
 
 // postActivity posts or updates the activity message. Must be called with lock held.
 func (c *compatTurn) postActivity() {
+	if c.activityDeleted {
+		return
+	}
 	display := c.renderActivity()
 	if display == "" {
 		return
@@ -190,12 +194,29 @@ func (c *compatTurn) forceFlushText() {
 	c.postText()
 }
 
+// deleteActivity deletes the activity message and resets activity state.
+// Must be called with lock held.
+func (c *compatTurn) deleteActivity() {
+	c.stopActivityTimer()
+	if c.activityTS == "" {
+		return
+	}
+	c.logSlack("deleteMessage(activity)", c.activityTS)
+	c.api.DeleteMessage(c.channel, c.activityTS)
+	c.activityTS = ""
+	c.activityDeleted = true
+	c.thinkBuf.Reset()
+	c.activities = nil
+	c.toolIndex = make(map[string]int)
+}
+
 func (c *compatTurn) writeThinking(text string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// Flush any pending text before first activity
+	// Flush any pending text before activity
 	c.forceFlushText()
+	c.activityDeleted = false // new thinking starts fresh activity
 
 	c.thinkBuf.WriteString(text)
 	c.flushActivity()
@@ -205,8 +226,15 @@ func (c *compatTurn) writeTool(id, name, status, detail string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// Flush any pending text before first activity
+	// Flush any pending text before activity
 	c.forceFlushText()
+
+	// New running tool (not a done/error update) starts fresh activity
+	if status == ToolRunning {
+		if _, exists := c.toolIndex[id]; !exists {
+			c.activityDeleted = false
+		}
+	}
 
 	summary := name
 	if detail != "" {
@@ -265,6 +293,9 @@ func (c *compatTurn) writeText(text string) {
 		if text == "" {
 			return
 		}
+
+		// Delete activity message when new text starts — tools are transient
+		c.deleteActivity()
 	}
 	c.textBuf.WriteString(text)
 
@@ -327,7 +358,6 @@ func (c *compatTurn) stopTimer() {
 }
 
 // finish freezes the activity message and updates the text message to the full final response.
-// No messages are deleted.
 func (c *compatTurn) finish() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()

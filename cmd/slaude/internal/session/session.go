@@ -430,7 +430,6 @@ func (s *Session) readTurn() error {
 
 		case "tool_start":
 			// Early tool name from content_block_start — show activity immediately
-			finishTool()
 			toolSeq++
 			lastToolID = fmt.Sprintf("t%d", toolSeq)
 			lastToolName = evt.ToolName
@@ -457,7 +456,7 @@ func (s *Session) readTurn() error {
 			if lastToolName == evt.ToolName && lastToolDetail == "" {
 				lastToolDetail = toolDetail(evt.ToolName, evt.ToolInput)
 			} else {
-				finishTool()
+				// Different tool without a preceding tool_start
 				toolSeq++
 				lastToolID = fmt.Sprintf("t%d", toolSeq)
 				lastToolName = evt.ToolName
