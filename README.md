@@ -39,8 +39,8 @@ go build -o slaude ./cmd/slaude/
 ### Auth
 
 ```bash
-slaude auth --extract    # extract from local Slack app (recommended)
-slaude auth              # paste a token manually
+slaude auth              # extract from local Slack app (default)
+slaude auth --manual     # paste a token manually
 ```
 
 ### Usage

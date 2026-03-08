@@ -290,7 +290,7 @@ Three token types are supported, stored in `~/.config/slagent/credentials.json`:
 
 | Token Type | Prefix | How to Get | Admin Required |
 |-----------|--------|------------|----------------|
-| Session   | xoxc-  | `slaude auth --extract` | No |
+| Session   | xoxc-  | `slaude auth` | No |
 | Bot       | xoxb-  | Slack app OAuth | Yes |
 | User      | xoxp-  | Slack app OAuth (user scopes) | Yes |
 

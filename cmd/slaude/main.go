@@ -128,14 +128,14 @@ func (cmd *StartCmd) Run() error {
 
 // AuthCmd sets up Slack credentials.
 type AuthCmd struct {
-	Extract bool `help:"Extract credentials from local Slack desktop app."`
+	Manual bool `help:"Paste a token manually instead of extracting from Slack desktop app."`
 }
 
 func (cmd *AuthCmd) Run() error {
-	if cmd.Extract {
-		return runAuthExtract()
+	if cmd.Manual {
+		return runAuthManual()
 	}
-	return runAuthManual()
+	return runAuthExtract()
 }
 
 // ChannelsCmd lists accessible Slack channels.
