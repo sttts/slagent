@@ -36,6 +36,7 @@ type ResumeInfo struct {
 	SessionID  string
 	Channel    string
 	ThreadTS   string
+	ThreadURL  string // Slack permalink (empty if unavailable)
 	InstanceID string
 }
 
@@ -167,7 +168,17 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 	if channelDisplay == "" {
 		channelDisplay = cfg.Channel
 	}
-	ui.Banner(cfg.Topic, channelDisplay, threadURL)
+	bannerOpts := terminal.BannerOpts{
+		Topic:     cfg.Topic,
+		Channel:   channelDisplay,
+		ThreadURL: threadURL,
+	}
+
+	// Build join command for the banner
+	if sess.thread != nil && threadURL != "" && threadURL != "(resumed)" {
+		bannerOpts.JoinCmd = fmt.Sprintf("slaude join %s", threadURL)
+	}
+	ui.Banner(bannerOpts)
 
 	// Send initial topic (skip on resume — Claude already has context)
 	if !hasArg(cfg.ClaudeArgs, "--resume") {
@@ -224,6 +235,7 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 		SessionID:  proc.SessionID(),
 		Channel:    cfg.Channel,
 		ThreadTS:   sess.thread.ThreadTS(),
+		ThreadURL:  threadURL,
 		InstanceID: sess.thread.InstanceID(),
 	}
 

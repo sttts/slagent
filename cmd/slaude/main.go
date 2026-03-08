@@ -31,21 +31,60 @@ type StartCmd struct {
 	Channel      string   `short:"c" help:"Slack channel name or ID." placeholder:"CHANNEL"`
 	User         []string `short:"u" help:"Slack user(s) for DM. Use multiple -u for group DM." placeholder:"USER"`
 	Topic        []string `arg:"" optional:"" help:"Planning topic."`
-	ResumeThread string   `help:"Slack thread timestamp to resume." placeholder:"THREAD_TS"`
+	ResumeThread string   `help:"Slack thread URL or timestamp to resume." placeholder:"URL"`
 	Debug        bool     `help:"Print raw JSON events from Claude to terminal."`
 	ClaudeArgs   []string `name:"-" hidden:""`
 }
 
-// parseResumeThread splits "threadTS-instanceID" into its components.
-func parseResumeThread(value string) (threadTS, instanceID string) {
-	if idx := strings.LastIndex(value, "-"); idx > 0 {
-		return value[:idx], value[idx+1:]
+// parseResumeThread parses a resume-thread value which can be:
+//   - a Slack permalink: https://workspace.slack.com/archives/CHANNEL/pTIMESTAMP
+//   - a Slack permalink with instance ID: https://...pTIMESTAMP#instanceID
+//   - a bare "threadTS-instanceID"
+//   - a bare "threadTS"
+//
+// Returns (channel, threadTS, instanceID). Channel is empty for bare values.
+func parseResumeThread(value string) (channel, threadTS, instanceID string) {
+	// Slack permalink: https://...slack.com/archives/CHANNEL/pTIMESTAMP[#instanceID]
+	if strings.Contains(value, "slack.com/archives/") {
+		// Extract instance ID from URL fragment (#instanceID)
+		if idx := strings.LastIndex(value, "#"); idx >= 0 {
+			instanceID = value[idx+1:]
+			value = value[:idx]
+		}
+
+		parts := strings.Split(value, "/")
+		// Find "archives" and take the next two segments
+		for i, p := range parts {
+			if p == "archives" && i+2 < len(parts) {
+				channel = parts[i+1]
+				tsRaw := parts[i+2]
+
+				// Strip query string
+				if idx := strings.Index(tsRaw, "?"); idx >= 0 {
+					tsRaw = tsRaw[:idx]
+				}
+
+				// Convert pTIMESTAMP → TIMESTAMP.MICROSECONDS
+				tsRaw = strings.TrimPrefix(tsRaw, "p")
+				if len(tsRaw) > 6 {
+					threadTS = tsRaw[:len(tsRaw)-6] + "." + tsRaw[len(tsRaw)-6:]
+				} else {
+					threadTS = tsRaw
+				}
+				return
+			}
+		}
 	}
-	return value, ""
+
+	// Bare value: threadTS[-instanceID]
+	if idx := strings.LastIndex(value, "-"); idx > 0 {
+		return "", value[:idx], value[idx+1:]
+	}
+	return "", value, ""
 }
 
 func (cmd *StartCmd) Run() error {
-	threadTS, instanceID := parseResumeThread(cmd.ResumeThread)
+	urlChannel, threadTS, instanceID := parseResumeThread(cmd.ResumeThread)
 	cfg := session.Config{
 		Topic:          strings.Join(cmd.Topic, " "),
 		Channel:        cmd.Channel,
@@ -54,6 +93,11 @@ func (cmd *StartCmd) Run() error {
 		Debug:          cmd.Debug,
 		Workspace:      cli.Workspace,
 		ClaudeArgs:     cmd.ClaudeArgs,
+	}
+
+	// Channel from URL overrides -c flag (unless already set)
+	if urlChannel != "" && cfg.Channel == "" {
+		cfg.Channel = urlChannel
 	}
 
 	// Resolve --channel name or --user(s) to a channel ID
@@ -122,17 +166,19 @@ func (cmd *StartCmd) Run() error {
 	if resume != nil && resume.SessionID != "" {
 		fmt.Println()
 		fmt.Println("🔄 To resume this session:")
-		args := "slaude"
-		if resume.Channel != "" {
-			args += fmt.Sprintf(" -c %s", resume.Channel)
+		if resume.ThreadURL != "" && resume.InstanceID != "" {
+			fmt.Printf("  slaude resume %s#%s -- --resume %s\n", resume.ThreadURL, resume.InstanceID, resume.SessionID)
+		} else {
+			args := "slaude resume"
+			if resume.Channel != "" {
+				args += fmt.Sprintf(" -c %s", resume.Channel)
+			}
+			if resume.ThreadTS != "" {
+				args += fmt.Sprintf(" --resume-thread %s", resume.ThreadTS)
+			}
+			args += fmt.Sprintf(" -- --resume %s", resume.SessionID)
+			fmt.Printf("  %s\n", args)
 		}
-		if resume.ThreadTS != "" && resume.InstanceID != "" {
-			args += fmt.Sprintf(" --resume-thread %s-%s", resume.ThreadTS, resume.InstanceID)
-		} else if resume.ThreadTS != "" {
-			args += fmt.Sprintf(" --resume-thread %s", resume.ThreadTS)
-		}
-		args += fmt.Sprintf(" -- --resume %s", resume.SessionID)
-		fmt.Printf("  %s\n", args)
 		fmt.Println()
 		fmt.Println("🤖 To resume in Claude Code directly:")
 		fmt.Printf("  claude --resume %s\n", resume.SessionID)

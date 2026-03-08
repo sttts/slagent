@@ -37,18 +37,29 @@ func NewWithWriter(w io.Writer) *UI {
 	return &UI{w: w}
 }
 
+// BannerOpts configures the banner display.
+type BannerOpts struct {
+	Topic     string
+	Channel   string
+	ThreadURL string
+	JoinCmd string // command to join this thread with a new slaude instance
+}
+
 // Banner prints the session start info.
-func (u *UI) Banner(topic, channel, threadURL string) {
+func (u *UI) Banner(opts BannerOpts) {
 	fmt.Fprintf(u.w, "\n%s%s🧵 slaude%s", bold, green, reset)
-	if topic != "" {
-		fmt.Fprintf(u.w, " — %s", topic)
+	if opts.Topic != "" {
+		fmt.Fprintf(u.w, " — %s", opts.Topic)
 	}
 	fmt.Fprintln(u.w)
-	if channel != "" {
-		fmt.Fprintf(u.w, "%s  💬 Channel: %s%s\n", dim, channel, reset)
+	if opts.Channel != "" {
+		fmt.Fprintf(u.w, "%s  💬 Channel: %s%s\n", dim, opts.Channel, reset)
 	}
-	if threadURL != "" {
-		fmt.Fprintf(u.w, "%s  🔗 Thread:  %s%s\n", dim, threadURL, reset)
+	if opts.ThreadURL != "" {
+		fmt.Fprintf(u.w, "%s  🔗 Thread:  %s%s\n", dim, opts.ThreadURL, reset)
+	}
+	if opts.JoinCmd != "" {
+		fmt.Fprintf(u.w, "%s  🚀 Join:    %s%s\n", dim, opts.JoinCmd, reset)
 	}
 	fmt.Fprintln(u.w, dim+strings.Repeat("─", 60)+reset)
 	fmt.Fprintln(u.w)
