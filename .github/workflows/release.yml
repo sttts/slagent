@@ -2,18 +2,45 @@ name: Release
 
 on:
   push:
-    tags: ["v*"]
+    branches: [master]
 
 permissions:
   contents: write
 
 jobs:
-  release:
+  tag-and-release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Compute CalVer tag
+        id: tag
+        run: |
+          # v<YYYY>.<M>.<D>-alpha.<counter>  (no leading zeros)
+          year=$(date -u +%Y)
+          month=$(date -u +%-m)
+          day=$(date -u +%-d)
+          prefix="v${year}.${month}.${day}-alpha"
+
+          # Find highest existing counter for today
+          counter=0
+          for t in $(git tag -l "${prefix}.*" | sort -t. -k5 -n); do
+            n="${t##*.}"
+            if [ "$n" -ge "$counter" ]; then
+              counter=$((n + 1))
+            fi
+          done
+
+          tag="${prefix}.${counter}"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "Auto-tag: ${tag}"
+
+      - name: Create and push tag
+        run: |
+          git tag "${{ steps.tag.outputs.tag }}"
+          git push origin "${{ steps.tag.outputs.tag }}"
 
       - uses: actions/setup-go@v5
         with:
