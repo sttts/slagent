@@ -119,5 +119,7 @@ Same app setup as bot tokens, using User Token Scopes.
 | Platform | Token extraction | Session mirroring |
 |----------|-----------------|-------------------|
 | macOS    | Yes             | Yes               |
-| Linux    | Yes             | Yes               |
-| Windows  | No              | Yes (manual auth) |
+| Linux    | Untested        | Untested          |
+| Windows  | No              | Untested          |
+
+Only macOS is actively tested. Linux and Windows might work — PRs welcome.
