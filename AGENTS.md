@@ -61,7 +61,7 @@ Module: `github.com/sttts/slagent`
 
 ## Slack Formatting
 - Text messages: `🤖 <mrkdwn converted text>` (inline prefix, no code block).
-- Activity messages: context block with thinking/tool/status lines (max 6 lines).
+- Activity messages: context block with thinking/tool/status lines (max 6 lines). Transient — deleted when text arrives.
 - Free-text AskUserQuestion: prefix `<@owner>: ` prepended at finish time via `MarkQuestion(prefix)`.
   Claude streams text BEFORE calling AskUserQuestion, so prefix must be prepended after buffering.
 - Trailing `?` replaced with ` ❓` on finish for question turns.
@@ -81,7 +81,7 @@ Module: `github.com/sttts/slagent`
 
 ## Architecture Notes
 - Turn interface abstracts Slack backends (compat vs native).
-- compat: throttled postMessage/update (1/sec), debounce timers for text and activity.
+- compat: throttled postMessage/update (1/sec), debounce timers for text and activity. Activity is transient (deleted when text arrives).
 - native: chat.startStream/appendStream/stopStream (bot tokens only).
 - `readTurn` in session.go maps Claude stream-JSON events to Turn method calls.
 - Event order: text_delta* → tool_use → text_delta* → result (tool_use comes AFTER text).

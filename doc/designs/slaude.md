@@ -61,8 +61,8 @@ controlled by the user directly.
 ### Subcommands
 
 - `slaude start` — start a new session mirrored to Slack
-- `slaude join URL` — join an existing thread with a new slaude instance (planned)
-- `slaude resume URL#instanceID -- --resume SESSION_ID` — resume an existing session (planned)
+- `slaude join URL` — join an existing thread with a new slaude instance
+- `slaude resume URL#instanceID -- --resume SESSION_ID` — resume an existing session
 - `slaude auth` — extract credentials from Slack desktop app (default), or `--manual` to paste a token
 - `slaude channels` — list accessible channels
 - `slaude share FILE -c CHANNEL` — post a plan file to Slack
@@ -271,33 +271,27 @@ Messages at the bottom of the thread follow this order:
 2. **Tasks message** — persistent TODO list (only shown when tasks exist)
 3. **Question/prompt** — interactive prompt with reaction emojis (optional)
 
-## Interactive Buttons (planned)
+## Interactive Prompts
 
-Interactive tools (ExitPlanMode, AskUserQuestion, EnterPlanMode) should be shown
-in Slack with Block Kit buttons that the session owner can click to approve/reject.
+Interactive tools (ExitPlanMode, AskUserQuestion, EnterPlanMode) are posted
+to Slack with reaction emojis that the session owner clicks to respond.
 
-### Constraint
+### Multi-choice (AskUserQuestion with allowedPrompts)
 
-Block Kit button clicks send an interaction payload to a server endpoint.
-slaude is a CLI without a persistent server.
+Posted as a numbered list with emoji reactions (`:one:`, `:two:`, etc.).
+Owner clicks a reaction to select. `FinalizeReaction` cleans up: re-adds
+the selected reaction and removes the rest.
 
-### Approach: Slack Socket Mode
+### Binary prompts (ExitPlanMode, EnterPlanMode)
 
-Socket Mode delivers interaction payloads over WebSocket — no public URL needed.
+Posted with `:white_check_mark:` and `:x:` reactions. Owner clicks to
+approve or reject.
 
-Requirements:
-- A Slack app with Socket Mode enabled
-- Bot token (`xoxb-`) for API calls
-- App-level token (`xapp-`) for the WebSocket connection
+### Free-text questions (AskUserQuestion without allowedPrompts)
 
-Flow:
-1. Claude emits ExitPlanMode → slaude posts Block Kit message with buttons
-2. Owner clicks "Approve" → Slack sends interaction payload over WebSocket
-3. slaude receives payload, verifies owner, sends approval to Claude stdin
-4. Message updated to show "Approved by @owner"
-
-Limitation: Only available with bot tokens (xoxb-). Session tokens (xoxc-)
-fall back to text-only prompts in Slack with terminal-only interaction.
+Not posted as a separate prompt. The question text is streamed as the
+turn's text message with `MarkQuestion(prefix)` adding `@mention` and
+trailing `❓`.
 
 ## Dependencies
 
