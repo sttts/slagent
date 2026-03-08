@@ -145,14 +145,37 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 		sess.thread = slagent.NewThread(client, creds.EffectiveToken(), cfg.Channel, opts...)
 	}
 
-	// Build extra args: append Slack context to --system-prompt if thread is active
 	extraArgs := append([]string{}, cfg.ClaudeArgs...)
+
+	// Load SOUL.md via --soul (working directory first, then ~/.config/slagent/)
+	if findArg(extraArgs, "--soul") < 0 {
+		for _, path := range soulPaths() {
+			if _, err := os.Stat(path); err == nil {
+				extraArgs = append(extraArgs, "--soul", path)
+				break
+			}
+		}
+	}
+
+	// Append Slack context to --system-prompt if thread is active
 	if sess.thread != nil {
-		slackCtx := "\n\nYour session is mirrored to a Slack thread. " +
-			"Messages prefixed with [Team feedback from Slack] contain input from " +
-			"team members watching the thread. Consider their feedback."
+		emoji := sess.thread.Emoji()
+		instanceID := sess.thread.InstanceID()
+		slackCtx := fmt.Sprintf(
+			"Your session is mirrored to a Slack thread. "+
+				"Your identity in this thread is %s (:%s:). "+
+				"Your messages appear prefixed with %s in Slack.\n\n"+
+				"Messages prefixed with [Team feedback from Slack] contain input from "+
+				"team members watching the thread. Consider their feedback.\n\n"+
+				"Important behavior rules for Slack:\n"+
+				"- Do NOT acknowledge every message. Only respond when you have something substantive to say.\n"+
+				"- Messages from other agent instances (other slaude sessions in the same thread) "+
+				"should generally be ignored unless they are directly relevant to your task.\n"+
+				"- Be concise. Slack readers prefer short, focused responses over verbose ones.\n"+
+				"- Do not greet or say hello in response to feedback. Just act on it.",
+			emoji, instanceID, emoji)
 		if idx := findArg(extraArgs, "--system-prompt"); idx >= 0 && idx+1 < len(extraArgs) {
-			extraArgs[idx+1] += slackCtx
+			extraArgs[idx+1] += "\n\n" + slackCtx
 		} else {
 			extraArgs = append(extraArgs, "--system-prompt", slackCtx)
 		}
@@ -201,8 +224,8 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 	}
 	ui.Banner(bannerOpts)
 
-	// Send initial topic (skip on resume — Claude already has context)
-	if !hasArg(cfg.ClaudeArgs, "--resume") {
+	// Send initial topic (skip on resume or if no topic given)
+	if cfg.Topic != "" && !hasArg(cfg.ClaudeArgs, "--resume") {
 		if err := proc.Send(cfg.Topic); err != nil {
 			return nil, fmt.Errorf("send topic: %w", err)
 		}
@@ -704,6 +727,15 @@ func findArg(args []string, flag string) int {
 // hasArg returns true if the given flag appears in args.
 func hasArg(args []string, flag string) bool {
 	return findArg(args, flag) >= 0
+}
+
+// soulPaths returns candidate paths for SOUL.md, in priority order.
+func soulPaths() []string {
+	paths := []string{"SOUL.md"}
+	if home, err := os.UserHomeDir(); err == nil {
+		paths = append(paths, filepath.Join(home, ".config", "slagent", "SOUL.md"))
+	}
+	return paths
 }
 
 // truncate shortens s to max characters with "..." suffix.

@@ -156,9 +156,9 @@ func NewThread(client *slackapi.Client, token, channel string, opts ...ThreadOpt
 
 // Start posts the initial thread message and returns the thread URL.
 func (t *Thread) Start(title string) (string, error) {
-	label := ":thread: Agent session"
+	label := fmt.Sprintf(":%s::thread: Agent session", t.instanceID)
 	if title != "" {
-		label = fmt.Sprintf(":thread: %s", title)
+		label = fmt.Sprintf(":%s::thread: %s", t.instanceID, title)
 	}
 
 	t.logSlack("postMessage(thread-start)", label)
