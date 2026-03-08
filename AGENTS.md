@@ -42,6 +42,10 @@ Module: `github.com/sttts/slagent`
 - Don't push without being asked.
 - Before committing, simplify the code. Look deeply at changes.
 
+## Build
+- Always build binaries after code changes: `go build ./cmd/slaude/ && go build ./cmd/slagent-demo/`
+- Don't just run `go build ./...` — also build the actual binaries to catch linker issues.
+
 ## Testing
 - Table-driven tests for event sequences in `event_sequence_test.go`.
 - Each test case replays events through both Slack (mock) and terminal (captured io.Writer).

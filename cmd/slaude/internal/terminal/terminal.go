@@ -25,6 +25,7 @@ const (
 type UI struct {
 	w         io.Writer
 	streaming bool // true while Claude is streaming text
+	textSeen  bool // true after first text chunk in a response
 }
 
 // New creates a new terminal UI that writes to stdout.
@@ -69,10 +70,19 @@ func (u *UI) Banner(opts BannerOpts) {
 func (u *UI) StartResponse() {
 	fmt.Fprintf(u.w, "%s%s🤖 Claude:%s ", bold, green, reset)
 	u.streaming = true
+	u.textSeen = false
 }
 
 // StreamText appends streaming text from Claude. Printed inline.
 func (u *UI) StreamText(text string) {
+	// Trim leading newlines from the first chunk so text starts on the same line as "🤖 Claude:"
+	if !u.textSeen {
+		text = strings.TrimLeft(text, "\n")
+		if text == "" {
+			return
+		}
+		u.textSeen = true
+	}
 	fmt.Fprint(u.w, text)
 }
 
