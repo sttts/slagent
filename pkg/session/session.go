@@ -68,7 +68,15 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 			return nil, fmt.Errorf("slack credentials: %w", err)
 		}
 		client := slagent.NewSlackClient(creds.EffectiveToken(), creds.Cookie)
-		sess.thread = slagent.NewThread(client, creds.EffectiveToken(), cfg.Channel)
+
+		// Resolve own user ID for @ mentions and thread ownership
+		var opts []slagent.ThreadOption
+		resp, err := client.AuthTest()
+		if err == nil && resp.UserID != "" {
+			opts = append(opts, slagent.WithOwner(resp.UserID))
+		}
+
+		sess.thread = slagent.NewThread(client, creds.EffectiveToken(), cfg.Channel, opts...)
 	}
 
 	// Build system prompt with team feedback framing
@@ -265,9 +273,9 @@ func (s *Session) readTurn() error {
 			s.ui.ToolActivity(formatTool(evt.ToolName, evt.ToolInput))
 
 			if turn != nil {
-				if prompt := interactivePrompt(evt.ToolName, evt.ToolInput); prompt != "" {
-					// Post interactive tools as prominent standalone messages
-					s.thread.Post(prompt)
+				if p := interactivePrompt(evt.ToolName, evt.ToolInput, s.thread.OwnerID()); p != nil {
+					// Post interactive tools with reaction emojis for response
+					s.thread.PostPrompt(p.text, p.reactions)
 				} else {
 					turn.Tool(lastToolID, evt.ToolName, slagent.ToolRunning, lastToolDetail)
 				}
@@ -339,9 +347,18 @@ func currentUser() string {
 	return u.Username
 }
 
-// interactivePrompt returns a formatted Slack message for interactive tools,
-// or "" if the tool is not interactive.
-func interactivePrompt(toolName, rawInput string) string {
+// promptMsg holds a Slack message with reaction emojis for interactive response.
+type promptMsg struct {
+	text      string
+	reactions []string
+}
+
+// Number emoji reaction names for multi-choice options.
+var numberReactions = []string{"one", "two", "three", "four", "five", "six", "seven", "eight", "nine"}
+
+// interactivePrompt returns a formatted Slack prompt with reactions for interactive tools,
+// or nil if the tool is not interactive.
+func interactivePrompt(toolName, rawInput, ownerID string) *promptMsg {
 	var input map[string]interface{}
 	json.Unmarshal([]byte(rawInput), &input)
 
@@ -354,19 +371,64 @@ func interactivePrompt(toolName, rawInput string) string {
 		return ""
 	}
 
+	mention := ""
+	if ownerID != "" {
+		mention = fmt.Sprintf(" <@%s>", ownerID)
+	}
+
 	switch toolName {
 	case "ExitPlanMode":
-		return "🗳️ *Claude wants to exit plan mode.* Awaiting approval in terminal."
+		return &promptMsg{
+			text:      fmt.Sprintf("🗳️ *Claude wants to exit plan mode.*%s", mention),
+			reactions: []string{"white_check_mark", "x"},
+		}
 	case "EnterPlanMode":
-		return "🗳️ *Claude wants to enter plan mode.* Awaiting approval in terminal."
+		return &promptMsg{
+			text:      fmt.Sprintf("🗳️ *Claude wants to enter plan mode.*%s", mention),
+			reactions: []string{"white_check_mark", "x"},
+		}
 	case "AskUserQuestion":
 		q := str("question")
 		if q == "" {
-			return "❓ *Claude has a question.* Awaiting answer in terminal."
+			q = "Claude has a question."
 		}
-		return fmt.Sprintf("❓ *Claude asks:* %s", q)
+
+		// Check for allowedPrompts (multiple choice options)
+		if raw, ok := input["allowedPrompts"]; ok {
+			if arr, ok := raw.([]interface{}); ok && len(arr) > 0 {
+				var lines []string
+				var reactions []string
+				lines = append(lines, fmt.Sprintf("❓ *Claude asks:*%s\n%s\n", mention, q))
+				for i, opt := range arr {
+					if i >= len(numberReactions) {
+						break
+					}
+					label, _ := opt.(string)
+					lines = append(lines, fmt.Sprintf("%s  %s", numberEmoji(i), label))
+					reactions = append(reactions, numberReactions[i])
+				}
+				return &promptMsg{
+					text:      strings.Join(lines, "\n"),
+					reactions: reactions,
+				}
+			}
+		}
+
+		return &promptMsg{
+			text:      fmt.Sprintf("❓ *Claude asks:*%s\n%s", mention, q),
+			reactions: []string{"white_check_mark", "x"},
+		}
 	}
-	return ""
+	return nil
+}
+
+// numberEmoji returns a display emoji for an index (0-based).
+func numberEmoji(i int) string {
+	emojis := []string{"1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"}
+	if i < len(emojis) {
+		return emojis[i]
+	}
+	return fmt.Sprintf("%d.", i+1)
 }
 
 // toolDetail extracts the raw detail string for slagent (no emoji).
