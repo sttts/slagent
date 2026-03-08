@@ -10,6 +10,7 @@ const (
 	TypeAssistant      = "assistant"
 	TypeResult         = "result"
 	TypeRateLimitEvent = "rate_limit_event"
+	TypeControlRequest = "control_request"
 )
 
 // Stream event subtypes.
@@ -42,6 +43,17 @@ type RawEvent struct {
 	Result     string `json:"result,omitempty"`
 	NumTurns   int    `json:"num_turns,omitempty"`
 	DurationMs int    `json:"duration_ms,omitempty"`
+
+	// Control request fields
+	RequestID string          `json:"request_id,omitempty"`
+	Request   json.RawMessage `json:"request,omitempty"`
+}
+
+// ControlRequest is the "request" object inside a control_request event.
+type ControlRequest struct {
+	Subtype  string          `json:"subtype"`
+	ToolName string          `json:"tool_name,omitempty"`
+	Input    json.RawMessage `json:"input,omitempty"`
 }
 
 // StreamEventInner is the "event" object inside a stream_event.
@@ -76,12 +88,13 @@ type ContentBlock struct {
 
 // Event is a high-level parsed event for consumers.
 type Event struct {
-	Type      string // system, text_delta, thinking, assistant, tool_use, result, etc.
+	Type      string // system, text_delta, thinking, assistant, tool_use, control_request, result, etc.
 	Text      string // for text_delta and assistant
-	ToolName  string // for tool_use
-	ToolInput string // for tool_use
+	ToolName  string // for tool_use and control_request
+	ToolInput string // for tool_use and control_request
 	IsError   bool   // for result
 	SessionID string
+	RequestID string // for control_request
 	Raw       *RawEvent
 	RawJSON   []byte // original JSON line (set by ReadEvent)
 }
@@ -154,6 +167,19 @@ func ParseEvent(line []byte) (*Event, error) {
 		evt.Type = TypeResult
 		evt.IsError = raw.IsError
 		evt.Text = raw.Result
+
+	case TypeControlRequest:
+		evt.Type = TypeControlRequest
+		evt.RequestID = raw.RequestID
+		if raw.Request != nil {
+			var req ControlRequest
+			if err := json.Unmarshal(raw.Request, &req); err == nil {
+				evt.ToolName = req.ToolName
+				if req.Input != nil {
+					evt.ToolInput = string(req.Input)
+				}
+			}
+		}
 
 	default:
 		evt.Type = raw.Type
