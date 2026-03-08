@@ -1,4 +1,4 @@
-// Package session orchestrates the pairplan planning session.
+// Package session orchestrates the slaude planning session.
 package session
 
 import (
@@ -13,22 +13,20 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sttts/pairplan/pkg/claude"
-	"github.com/sttts/pairplan/pkg/slagent"
-	pslack "github.com/sttts/pairplan/pkg/slack"
-	"github.com/sttts/pairplan/pkg/terminal"
+	"github.com/sttts/slagent"
+	"github.com/sttts/slagent/cmd/slaude/internal/claude"
+	"github.com/sttts/slagent/cmd/slaude/internal/terminal"
+	"github.com/sttts/slagent/credential"
 )
 
 // Config holds session configuration.
 type Config struct {
-	Topic           string
-	Channel         string
-	ChannelName     string // display name (e.g. "#general" or "@haarchri")
-	PermissionMode  string
-	SystemPrompt    string
-	ResumeSessionID string // Claude session ID to resume
-	ResumeThreadTS  string // Slack thread timestamp to resume
-	Debug           bool   // write raw JSON events to debug.log
+	Topic          string
+	Channel        string
+	ChannelName    string   // display name (e.g. "#general" or "@haarchri")
+	ResumeThreadTS string   // Slack thread timestamp to resume
+	Debug          bool     // write raw JSON events to debug.log
+	ClaudeArgs     []string // pass-through args for Claude subprocess
 }
 
 // ResumeInfo is returned by Run so the caller can print a resume command.
@@ -38,7 +36,7 @@ type ResumeInfo struct {
 	ThreadTS  string
 }
 
-// Session is a running pairplan planning session.
+// Session is a running slaude session.
 type Session struct {
 	cfg      Config
 	ui       *terminal.UI
@@ -90,7 +88,7 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 
 	// Set up Slack if channel is specified
 	if cfg.Channel != "" {
-		creds, err := pslack.LoadCredentials()
+		creds, err := credential.Load()
 		if err != nil {
 			return nil, fmt.Errorf("slack credentials: %w", err)
 		}
@@ -116,27 +114,21 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 		sess.thread = slagent.NewThread(client, creds.EffectiveToken(), cfg.Channel, opts...)
 	}
 
-	// Build system prompt with team feedback framing
-	systemPrompt := cfg.SystemPrompt
+	// Build extra args: append Slack context to --system-prompt if thread is active
+	extraArgs := append([]string{}, cfg.ClaudeArgs...)
 	if sess.thread != nil {
-		extra := "\n\nYou are in a collaborative planning session. " +
-			"Messages prefixed with [Team feedback from Slack] contain input from team members " +
-			"in a Slack thread. Consider their feedback and incorporate it into the plan."
-		systemPrompt += extra
+		slackCtx := "\n\nYour session is mirrored to a Slack thread. " +
+			"Messages prefixed with [Team feedback from Slack] contain input from " +
+			"team members watching the thread. Consider their feedback."
+		if idx := findArg(extraArgs, "--system-prompt"); idx >= 0 && idx+1 < len(extraArgs) {
+			extraArgs[idx+1] += slackCtx
+		} else {
+			extraArgs = append(extraArgs, "--system-prompt", slackCtx)
+		}
 	}
 
-	// Start Claude (with resume if specified)
-	opts := []claude.Option{
-		claude.WithPermissionMode(cfg.PermissionMode),
-	}
-	if systemPrompt != "" {
-		opts = append(opts, claude.WithSystemPrompt(systemPrompt))
-	}
-	if cfg.ResumeSessionID != "" {
-		opts = append(opts, claude.WithResume(cfg.ResumeSessionID))
-	}
-
-	proc, err := claude.Start(ctx, opts...)
+	// Start Claude with pass-through args
+	proc, err := claude.Start(ctx, claude.WithExtraArgs(extraArgs))
 	if err != nil {
 		return nil, fmt.Errorf("start claude: %w", err)
 	}
@@ -170,7 +162,7 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 	ui.Banner(cfg.Topic, channelDisplay, threadURL)
 
 	// Send initial topic (skip on resume — Claude already has context)
-	if cfg.ResumeSessionID == "" {
+	if !hasArg(cfg.ClaudeArgs, "--resume") {
 		if err := proc.Send(cfg.Topic); err != nil {
 			return nil, fmt.Errorf("send topic: %w", err)
 		}
@@ -655,6 +647,21 @@ func formatTool(toolName, rawInput string) string {
 	default:
 		return fmt.Sprintf("🔧 %s: %s", toolName, truncate(rawInput, 60))
 	}
+}
+
+// findArg returns the index of the given flag in args, or -1 if not found.
+func findArg(args []string, flag string) int {
+	for i, a := range args {
+		if a == flag || strings.HasPrefix(a, flag+"=") {
+			return i
+		}
+	}
+	return -1
+}
+
+// hasArg returns true if the given flag appears in args.
+func hasArg(args []string, flag string) bool {
+	return findArg(args, flag) >= 0
 }
 
 // truncate shortens s to max characters with "..." suffix.

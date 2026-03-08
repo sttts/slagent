@@ -10,10 +10,10 @@ import (
 
 	"github.com/alecthomas/kong"
 
-	"github.com/sttts/pairplan/pkg/session"
-	"github.com/sttts/pairplan/pkg/slagent"
-	pslack "github.com/sttts/pairplan/pkg/slack"
-	"github.com/sttts/pairplan/pkg/slack/extract"
+	"github.com/sttts/slagent"
+	"github.com/sttts/slagent/channel"
+	"github.com/sttts/slagent/cmd/slaude/internal/session"
+	"github.com/sttts/slagent/credential"
 )
 
 var cli struct {
@@ -26,28 +26,26 @@ var cli struct {
 
 // StartCmd starts an interactive planning session with Claude Code.
 type StartCmd struct {
-	Channel        string   `short:"c" help:"Slack channel name or ID." placeholder:"CHANNEL"`
-	User           []string `short:"u" help:"Slack user(s) for DM. Use multiple -u for group DM." placeholder:"USER"`
-	Topic          []string `arg:"" optional:"" help:"Planning topic."`
-	PermissionMode string   `help:"Claude permission mode." default:"plan"`
-	Resume         string   `short:"r" help:"Resume a previous session (session ID)." placeholder:"SESSION_ID"`
-	ResumeThread   string   `help:"Slack thread timestamp to resume." placeholder:"THREAD_TS"`
-	Debug          bool     `help:"Print raw JSON events from Claude to terminal."`
+	Channel      string   `short:"c" help:"Slack channel name or ID." placeholder:"CHANNEL"`
+	User         []string `short:"u" help:"Slack user(s) for DM. Use multiple -u for group DM." placeholder:"USER"`
+	Topic        []string `arg:"" optional:"" help:"Planning topic."`
+	ResumeThread string   `help:"Slack thread timestamp to resume." placeholder:"THREAD_TS"`
+	Debug        bool     `help:"Print raw JSON events from Claude to terminal."`
+	ClaudeArgs   []string `name:"-" hidden:""`
 }
 
 func (cmd *StartCmd) Run() error {
 	cfg := session.Config{
-		PermissionMode:  cmd.PermissionMode,
-		Topic:           strings.Join(cmd.Topic, " "),
-		Channel:         cmd.Channel,
-		ResumeSessionID: cmd.Resume,
-		ResumeThreadTS:  cmd.ResumeThread,
-		Debug:           cmd.Debug,
+		Topic:          strings.Join(cmd.Topic, " "),
+		Channel:        cmd.Channel,
+		ResumeThreadTS: cmd.ResumeThread,
+		Debug:          cmd.Debug,
+		ClaudeArgs:     cmd.ClaudeArgs,
 	}
 
 	// Resolve --channel name or --user(s) to a channel ID
 	if len(cmd.User) > 0 || (cfg.Channel != "" && !isSlackID(cfg.Channel)) {
-		client, err := pslack.New()
+		client, err := channel.New()
 		if err != nil {
 			return err
 		}
@@ -77,13 +75,22 @@ func (cmd *StartCmd) Run() error {
 
 	// If no channel given, prompt with channel list when credentials exist
 	if cfg.Channel == "" {
-		if _, err := pslack.LoadCredentials(); err == nil {
+		if _, err := credential.Load(); err == nil {
 			cfg.Channel, cfg.ChannelName = promptChannel()
 		}
 	}
 
+	// Detect resume from pass-through args
+	isResume := false
+	for _, a := range cfg.ClaudeArgs {
+		if a == "--resume" || strings.HasPrefix(a, "--resume=") {
+			isResume = true
+			break
+		}
+	}
+
 	// If no topic given (and not resuming), prompt for one
-	if cfg.Topic == "" && cfg.ResumeSessionID == "" {
+	if cfg.Topic == "" && !isResume {
 		fmt.Print("📝 Topic: ")
 		reader := bufio.NewReader(os.Stdin)
 		line, _ := reader.ReadString('\n')
@@ -102,13 +109,14 @@ func (cmd *StartCmd) Run() error {
 	if resume != nil && resume.SessionID != "" {
 		fmt.Println()
 		fmt.Println("🔄 To resume this session:")
-		args := fmt.Sprintf("pairplan start -r %s", resume.SessionID)
+		args := "slaude"
 		if resume.Channel != "" {
 			args += fmt.Sprintf(" -c %s", resume.Channel)
 		}
 		if resume.ThreadTS != "" {
 			args += fmt.Sprintf(" --resume-thread %s", resume.ThreadTS)
 		}
+		args += fmt.Sprintf(" -- --resume %s", resume.SessionID)
 		fmt.Printf("  %s\n", args)
 		fmt.Println()
 		fmt.Println("🤖 To resume in Claude Code directly:")
@@ -134,7 +142,7 @@ func (cmd *AuthCmd) Run() error {
 type ChannelsCmd struct{}
 
 func (cmd *ChannelsCmd) Run() error {
-	client, err := pslack.New()
+	client, err := channel.New()
 	if err != nil {
 		return err
 	}
@@ -168,19 +176,19 @@ func (cmd *ShareCmd) Run() error {
 	}
 
 	// Load credentials
-	creds, err := pslack.LoadCredentials()
+	creds, err := credential.Load()
 	if err != nil {
 		return err
 	}
 
 	// Resolve channel name if needed
-	channel := cmd.Channel
-	if !isSlackID(channel) {
-		resolver, err := pslack.New()
+	ch := cmd.Channel
+	if !isSlackID(ch) {
+		resolver, err := channel.New()
 		if err != nil {
 			return err
 		}
-		channel, err = resolver.ResolveChannelByName(channel)
+		ch, err = resolver.ResolveChannelByName(ch)
 		if err != nil {
 			return fmt.Errorf("resolving channel: %w", err)
 		}
@@ -188,7 +196,7 @@ func (cmd *ShareCmd) Run() error {
 
 	// Use slagent for thread creation and posting
 	client := slagent.NewSlackClient(creds.EffectiveToken(), creds.Cookie)
-	thread := slagent.NewThread(client, creds.EffectiveToken(), channel)
+	thread := slagent.NewThread(client, creds.EffectiveToken(), ch)
 
 	topic := fmt.Sprintf("Plan review: %s", cmd.File)
 	url, err := thread.Start(topic)
@@ -210,9 +218,9 @@ type StatusCmd struct{}
 func (cmd *StatusCmd) Run() error {
 	fmt.Println("📊 Status")
 	fmt.Println("  ⏸️  No active session.")
-	creds, err := pslack.LoadCredentials()
+	creds, err := credential.Load()
 	if err != nil {
-		fmt.Println("  ❌ Slack: not configured (run 'pairplan auth')")
+		fmt.Println("  ❌ Slack: not configured (run 'slaude auth')")
 	} else {
 		token := creds.EffectiveToken()
 		if len(token) > 10 {
@@ -223,12 +231,41 @@ func (cmd *StatusCmd) Run() error {
 	return nil
 }
 
+// extractPassthroughArgs returns args after "--" separator.
+func extractPassthroughArgs(args []string) []string {
+	for i, a := range args {
+		if a == "--" {
+			return args[i+1:]
+		}
+	}
+	return nil
+}
+
 func main() {
+	// Extract pass-through args before kong parsing
+	passthrough := extractPassthroughArgs(os.Args[1:])
+
+	// Strip everything after -- for kong
+	var kongArgs []string
+	for _, a := range os.Args[1:] {
+		if a == "--" {
+			break
+		}
+		kongArgs = append(kongArgs, a)
+	}
+
 	ctx := kong.Parse(&cli,
-		kong.Name("pairplan"),
-		kong.Description("Mirror Claude Code planning sessions to Slack threads."),
+		kong.Name("slaude"),
+		kong.Description("Mirror Claude Code sessions to Slack threads."),
 		kong.UsageOnError(),
+		kong.Vars{"args": strings.Join(kongArgs, " ")},
 	)
+
+	// Inject pass-through args into StartCmd
+	if start, ok := ctx.Selected().Target.Addr().Interface().(*StartCmd); ok {
+		start.ClaudeArgs = passthrough
+	}
+
 	if err := ctx.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "❌ %v\n", err)
 		os.Exit(1)
@@ -238,7 +275,7 @@ func main() {
 // promptChannel lists channels and lets the user pick one, or type @username for a DM.
 // Returns (channelID, displayName).
 func promptChannel() (string, string) {
-	client, err := pslack.New()
+	client, err := channel.New()
 	if err != nil {
 		return "", ""
 	}
@@ -328,12 +365,12 @@ func runAuthManual() error {
 		tokenType = "bot"
 	}
 
-	creds := &pslack.Credentials{Token: token, Type: tokenType}
-	if err := pslack.SaveCredentials(creds); err != nil {
+	creds := &credential.Credentials{Token: token, Type: tokenType}
+	if err := credential.Save(creds); err != nil {
 		return fmt.Errorf("saving credentials: %w", err)
 	}
 
-	fmt.Printf("\n✅ Credentials saved to %s (%s token)\n", pslack.CredentialsPath(), tokenType)
+	fmt.Printf("\n✅ Credentials saved to %s (%s token)\n", credential.Path(), tokenType)
 	if tokenType == "bot" {
 		fmt.Println("💡 Don't forget to invite the bot to your channel: /invite @your-bot-name")
 	}
@@ -345,13 +382,13 @@ func runAuthExtract() error {
 	fmt.Println("🔐 (you may see a macOS keychain access prompt — please allow access)")
 	fmt.Println()
 
-	result, err := extract.Extract()
+	result, err := credential.Extract()
 	if err != nil {
 		return err
 	}
 
 	// Choose workspace
-	var ws extract.Workspace
+	var ws credential.Workspace
 	if len(result.Workspaces) == 1 {
 		ws = result.Workspaces[0]
 		fmt.Printf("🏢 Found workspace: %s (%s)\n", ws.Name, ws.URL)
@@ -375,12 +412,12 @@ func runAuthExtract() error {
 		ws = result.Workspaces[idx]
 	}
 
-	creds := &pslack.Credentials{
+	creds := &credential.Credentials{
 		Token:  ws.Token,
 		Type:   "session",
 		Cookie: result.Cookie,
 	}
-	if err := pslack.SaveCredentials(creds); err != nil {
+	if err := credential.Save(creds); err != nil {
 		return fmt.Errorf("saving credentials: %w", err)
 	}
 
@@ -389,7 +426,7 @@ func runAuthExtract() error {
 		tokenPreview = tokenPreview[:14]
 	}
 	fmt.Printf("\n✅ Credentials saved for %s (token: %s...)\n", ws.Name, tokenPreview)
-	fmt.Printf("📁 Credentials file: %s\n", pslack.CredentialsPath())
+	fmt.Printf("📁 Credentials file: %s\n", credential.Path())
 	return nil
 }
 
@@ -402,7 +439,7 @@ func isSlackID(s string) bool {
 	return (prefix == 'C' || prefix == 'G' || prefix == 'D') && s[1] >= '0' && s[1] <= '9'
 }
 
-func slackProgress(p pslack.ListProgress) {
+func slackProgress(p channel.ListProgress) {
 	switch p.Phase {
 	case "checking":
 		fmt.Fprintf(os.Stderr, "\r⏳ checking recent activity... %d/%d", p.Done, p.Total)

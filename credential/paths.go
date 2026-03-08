@@ -1,6 +1,4 @@
-// Package extract handles automatic extraction of Slack session tokens
-// from the local Slack desktop app (Electron).
-package extract
+package credential
 
 import (
 	"os"

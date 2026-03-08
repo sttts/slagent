@@ -35,27 +35,22 @@ type userMessage struct {
 
 // Start spawns Claude in stream-json mode and returns a Process.
 func Start(ctx context.Context, opts ...Option) (*Process, error) {
-	cfg := config{
-		permissionMode: "plan",
-	}
+	var cfg config
 	for _, o := range opts {
 		o(&cfg)
 	}
 
+	// Base args: always needed for stream-json mode
 	args := []string{
 		"-p",
 		"--output-format=stream-json",
 		"--input-format=stream-json",
 		"--verbose",
 		"--include-partial-messages",
-		"--permission-mode=" + cfg.permissionMode,
 	}
-	if cfg.systemPrompt != "" {
-		args = append(args, "--system-prompt", cfg.systemPrompt)
-	}
-	if cfg.resumeSession != "" {
-		args = append(args, "--resume", cfg.resumeSession)
-	}
+
+	// Append user-provided extra args (--permission-mode, --resume, --system-prompt, etc.)
+	args = append(args, cfg.extraArgs...)
 
 	// Strip CLAUDECODE env var to allow nested invocation
 	env := make([]string, 0, len(os.Environ()))
@@ -150,22 +145,10 @@ func (p *Process) Stop() error {
 type Option func(*config)
 
 type config struct {
-	permissionMode string
-	systemPrompt   string
-	resumeSession  string
+	extraArgs []string
 }
 
-// WithPermissionMode sets the permission mode (default: "plan").
-func WithPermissionMode(mode string) Option {
-	return func(c *config) { c.permissionMode = mode }
-}
-
-// WithSystemPrompt sets an additional system prompt.
-func WithSystemPrompt(prompt string) Option {
-	return func(c *config) { c.systemPrompt = prompt }
-}
-
-// WithResume resumes an existing Claude session by ID.
-func WithResume(sessionID string) Option {
-	return func(c *config) { c.resumeSession = sessionID }
+// WithExtraArgs appends extra arguments to the Claude command line.
+func WithExtraArgs(args []string) Option {
+	return func(c *config) { c.extraArgs = args }
 }

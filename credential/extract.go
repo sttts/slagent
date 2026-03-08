@@ -1,4 +1,4 @@
-package extract
+package credential
 
 import "fmt"
 

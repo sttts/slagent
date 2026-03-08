@@ -1,22 +1,34 @@
-# pairplan — Agent Rules
+# slagent — Agent Rules
 
 ## Project
-Go CLI that mirrors Claude Code planning sessions to Slack threads.
+Go library for streaming agent sessions to Slack threads, plus `slaude` CLI that wraps Claude Code.
 
 ## Structure
 ```
-cmd/pairplan/main.go       — CLI entry point (start, auth, share, status)
-pkg/claude/events.go       — Stream-JSON event parsing
-pkg/claude/process.go      — Claude subprocess management
-pkg/terminal/terminal.go   — Terminal output (writes to io.Writer for testability)
-pkg/slack/client.go        — Slack API + credential management
-pkg/slagent/thread.go      — Thread lifecycle, reply polling, prompt posting
-pkg/slagent/turn.go        — Turn interface (Thinking/Tool/Text/MarkQuestion/Finish)
-pkg/slagent/compat.go      — Compat backend (postMessage/update for session/user tokens)
-pkg/slagent/native.go      — Native backend (chat.startStream for bot tokens)
-pkg/slagent/mrkdwn.go      — Markdown → Slack mrkdwn conversion
-pkg/session/session.go     — Session orchestration (wires claude+terminal+slack)
+slagent.go, thread.go, turn.go   — Root library: Thread, Turn, NewSlackClient
+compat.go, native.go             — Compat (postMessage/update) and native (chat.startStream) backends
+mrkdwn.go, reply.go              — Markdown→mrkdwn, reply polling
+
+credential/                      — Load, Save, Extract tokens from Slack desktop app
+  credential.go                  — Credentials struct, Load, Save, Path
+  extract.go, leveldb.go         — Extract() orchestrator, LevelDB token reading
+  cookie.go, decrypt.go, paths.go
+
+channel/                         — Resolve, List
+  channel.go                     — Client, ResolveByName, ResolveUser, List
+
+cmd/slaude/                      — CLI (auth, channels, share, status, start)
+  main.go
+cmd/slaude/internal/
+  session/session.go             — Session orchestration
+  claude/process.go, events.go   — Claude subprocess, stream-JSON parsing
+  terminal/terminal.go           — Terminal UI
+
+cmd/slagent-demo/                — Demo CLI
+  main.go
 ```
+
+Module: `github.com/sttts/slagent`
 
 ## Tasks
 - Use the task system (TaskCreate/TaskUpdate/TaskList) for everything the user asks.
@@ -31,11 +43,11 @@ pkg/session/session.go     — Session orchestration (wires claude+terminal+slac
 - Before committing, simplify the code. Look deeply at changes.
 
 ## Testing
-- Table-driven tests for event sequences in `pkg/slagent/event_sequence_test.go`.
+- Table-driven tests for event sequences in `event_sequence_test.go`.
 - Each test case replays events through both Slack (mock) and terminal (captured io.Writer).
 - Fields: `wantSlack`, `wantSlackPrefix`, `wantSlackSuffix`, `wantSlackActivity`, `wantTerminal`.
-- Mock Slack server in `pkg/slagent/mock_test.go`.
-- Session-level tests (interactivePrompt, formatTool, toolDetail) in `pkg/session/session_test.go`.
+- Mock Slack server in `mock_test.go`.
+- Session-level tests (interactivePrompt, formatTool, toolDetail) in `cmd/slaude/internal/session/session_test.go`.
 - Never skip tests to make CI pass. Fix the actual issue.
 
 ## Slack Formatting
@@ -55,6 +67,8 @@ pkg/session/session.go     — Session orchestration (wires claude+terminal+slac
 - Avoid duplicate code; prefer shared helpers.
 - Keep blank line above comments unless comment starts a scope.
 - Preserve existing formatting unless changing semantics.
+- Never stutter in package APIs (e.g. `credential.Load()` not `credential.LoadCredentials()`).
+- Use short canonical variable names like `ch`, `ts`, `cfg`. Long names are for packages.
 
 ## Architecture Notes
 - Turn interface abstracts Slack backends (compat vs native).
@@ -63,3 +77,4 @@ pkg/session/session.go     — Session orchestration (wires claude+terminal+slac
 - `readTurn` in session.go maps Claude stream-JSON events to Turn method calls.
 - Event order: text_delta* → tool_use → text_delta* → result (tool_use comes AFTER text).
 - `interactivePrompt()` returns nil for non-interactive tools; handled in readTurn's switch.
+- Claude args after `--` are passed through to the subprocess. slaude only owns its own flags.

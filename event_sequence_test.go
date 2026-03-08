@@ -2,10 +2,10 @@ package slagent
 
 import (
 	"bytes"
+	"fmt"
+	"io"
 	"strings"
 	"testing"
-
-	"github.com/sttts/pairplan/pkg/terminal"
 )
 
 // turnEvent represents a single event from the Claude stream-JSON protocol,
@@ -225,8 +225,8 @@ func TestEventSequences(t *testing.T) {
 
 			// Set up terminal UI with captured output
 			var termBuf bytes.Buffer
-			ui := terminal.NewWithWriter(&termBuf)
-			ui.StartResponse()
+			ui := &testUI{w: &termBuf}
+			ui.startResponse()
 
 			toolSeq := 0
 
@@ -234,14 +234,14 @@ func TestEventSequences(t *testing.T) {
 			for _, ev := range tt.events {
 				switch ev.kind {
 				case "text":
-					ui.StreamText(ev.text)
+					ui.streamText(ev.text)
 					turn.Text(ev.text)
 				case "thinking":
-					ui.Thinking(ev.text)
+					ui.thinking(ev.text)
 					turn.Thinking(ev.text)
 				case "tool":
 					toolSeq++
-					ui.ToolActivity(formatToolForTerminal(ev.text, ev.detail))
+					ui.toolActivity(formatToolForTerminal(ev.text, ev.detail))
 					turn.Tool(toolID(toolSeq), ev.text, ToolRunning, ev.detail)
 				case "tool_done":
 					turn.Tool(toolID(toolSeq), ev.text, ToolDone, ev.detail)
@@ -254,7 +254,7 @@ func TestEventSequences(t *testing.T) {
 				}
 			}
 
-			ui.EndResponse()
+			ui.endResponse()
 			turn.Finish()
 
 			// === Check Slack output ===
@@ -336,3 +336,15 @@ func stripANSI(s string) string {
 func toolID(seq int) string {
 	return "t" + string(rune('0'+seq))
 }
+
+// testUI is a minimal terminal UI for event sequence tests.
+type testUI struct {
+	w         io.Writer
+	streaming bool
+}
+
+func (u *testUI) startResponse()           { fmt.Fprint(u.w, "🤖 Claude: "); u.streaming = true }
+func (u *testUI) streamText(text string)   { fmt.Fprint(u.w, text) }
+func (u *testUI) endResponse()             { if u.streaming { fmt.Fprintln(u.w); u.streaming = false }; fmt.Fprintln(u.w) }
+func (u *testUI) toolActivity(s string)    { if u.streaming { fmt.Fprintln(u.w); u.streaming = false }; fmt.Fprintln(u.w, "  "+s) }
+func (u *testUI) thinking(text string)     { if u.streaming { fmt.Fprintln(u.w); u.streaming = false }; fmt.Fprintln(u.w, "  💭 "+strings.TrimRight(text, "\n")) }

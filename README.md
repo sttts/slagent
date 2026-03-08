@@ -1,129 +1,115 @@
-# pairplan
+# slagent
 
-Mirror Claude Code planning sessions to Slack threads. Your team follows along in Slack while you drive the planning session locally.
+Go library for streaming agent sessions to Slack threads.
 
-## Quick Start
+## Library
+
+slagent provides `Thread`, `Turn`, and dual-backend streaming (native `xoxb-` / compat `xoxc-`) for building Slack-integrated agent UIs.
+
+```go
+import "github.com/sttts/slagent"
+
+client := slagent.NewSlackClient(token, cookie)
+thread := slagent.NewThread(client, token, channelID, slagent.WithOwner(userID))
+url, _ := thread.Start("My agent session")
+
+turn := thread.NewTurn()
+turn.Thinking("analyzing...")
+turn.Tool("t1", "Read", slagent.ToolRunning, "main.go")
+turn.Tool("t1", "Read", slagent.ToolDone, "main.go")
+turn.Text("Here is the result.")
+turn.Finish()
+```
+
+Packages:
+- `slagent` — Thread, Turn, reply polling, markdown→mrkdwn
+- `credential` — Load/Save Slack credentials, extract from desktop app
+- `channel` — Resolve channel names/users, list channels
+
+## slaude — Claude Code ↔ Slack bridge
+
+Wraps any Claude Code session and mirrors it to a Slack thread. Works mid-session via `--resume`, not just for starting new sessions.
+
+### Build
 
 ```bash
-# Build
-go build -o pairplan ./cmd/pairplan/
+go build -o slaude ./cmd/slaude/
+```
 
-# Extract credentials from your local Slack app (no Slack app installation needed)
-pairplan auth --extract
+### Auth
 
-# List channels to find your group chat ID
-pairplan channels
+```bash
+slaude auth --extract    # extract from local Slack app (recommended)
+slaude auth              # paste a token manually
+```
 
-# Start a planning session mirrored to Slack
-pairplan start --channel C01234ABCDE --topic "API redesign"
+### Usage
+
+```bash
+# Start a session mirrored to Slack
+slaude -c CHANNEL -- --permission-mode plan "design the API"
+
+# Resume an existing Claude session
+slaude -c CHANNEL --resume-thread 1234567890.123456 -- --resume SESSION_ID
+
+# DM a user
+slaude -u alice -- "review this PR"
+
+# Local only (no Slack)
+slaude -- "quick question"
+```
+
+Everything after `--` is passed through to the Claude subprocess. This means slaude doesn't need to know about every Claude flag — you control `--permission-mode`, `--resume`, `--system-prompt`, etc. directly.
+
+### slaude flags
+
+| Flag | Description |
+|------|-------------|
+| `-c, --channel` | Slack channel name or ID |
+| `-u, --user` | Slack user(s) for DM |
+| `--resume-thread` | Slack thread TS to resume |
+| `--debug` | Write debug logs |
+| `[topic...]` | Positional topic arg |
+
+### Subcommands
+
+- `slaude auth` — set up Slack credentials
+- `slaude channels` — list accessible channels
+- `slaude share FILE -c CHANNEL` — post a plan file to Slack
+- `slaude status` — show current configuration
+
+## slagent-demo
+
+Demo CLI for testing slagent Slack UI features without Claude.
+
+```bash
+go build -o slagent-demo ./cmd/slagent-demo/
+slagent-demo -c CHANNEL full      # combined demo
+slagent-demo -c CHANNEL thinking  # thinking animation
+slagent-demo -c CHANNEL tools     # tool activity
 ```
 
 ## Authentication
 
-pairplan supports three token types:
+slaude supports three token types:
 
-### Session token (recommended, no admin approval needed)
+### Session token (recommended)
 
-Extract directly from your local Slack desktop app:
+Extract from your local Slack desktop app — no admin approval needed:
 
 ```bash
-pairplan auth --extract
+slaude auth --extract
 ```
 
-This reads the `xoxc-` session token and encrypted `xoxd-` cookie from Slack's local storage. On macOS you'll see a keychain access prompt — allow it so pairplan can decrypt the cookie.
-
-Requirements:
-- Slack desktop app installed and signed in
-- macOS or Linux
+Reads the `xoxc-` session token and `xoxd-` cookie from Slack's local storage. On macOS you'll see a keychain access prompt.
 
 ### Bot token (xoxb-)
 
-Requires creating a Slack app at https://api.slack.com/apps with scopes: `chat:write`, `channels:history`, `groups:history`, `channels:read`, `groups:read`, `users:read`.
+Create a Slack app at https://api.slack.com/apps with scopes: `chat:write`, `channels:history`, `groups:history`, `channels:read`, `groups:read`, `users:read`.
 
-```bash
-pairplan auth
-# paste your xoxb-... token
-```
+### User token (xoxp-)
 
-### User OAuth token (xoxp-)
-
-Same app setup as bot tokens, but using User Token Scopes. Also requires app installation to the workspace.
-
-```bash
-pairplan auth
-# paste your xoxp-... token
-```
-
-## Commands
-
-### `pairplan start`
-
-Start an interactive planning session with Claude Code.
-
-```bash
-pairplan start [--channel C] [--topic "description"]
-```
-
-- `--channel`, `-c` — Slack channel ID to mirror to (omit for local-only)
-- `--topic`, `-t` — Planning topic (shown in Slack thread header)
-- `--permission-mode` — Claude permission mode (default: `plan`)
-
-During a session:
-- Type your messages to interact with Claude
-- Team members reply in the Slack thread — their feedback is injected into the conversation
-- Claude's thinking is shown live in Slack (updated every second, deleted when done)
-- Long responses are auto-split into multiple messages
-- Ctrl-D or Ctrl-C to end
-
-### `pairplan auth`
-
-Set up Slack credentials.
-
-```bash
-pairplan auth              # paste a token manually
-pairplan auth --extract    # extract from local Slack app
-```
-
-### `pairplan channels`
-
-List accessible Slack channels with their IDs. Useful for finding private group chat IDs.
-
-```bash
-pairplan channels
-```
-
-Output:
-```
-ID              TYPE      NAME
-──────────────────────────────────────────────────
-C01234ABCDE     channel   general
-G09876FGHIJ     group     secret-project
-D05555KLMNO     mpim      mpdm-alice--bob--you-1
-```
-
-### `pairplan share`
-
-Post a plan file to a Slack channel for review.
-
-```bash
-pairplan share plan.md --channel C01234ABCDE
-```
-
-### `pairplan status`
-
-Show current configuration (token type, truncated token).
-
-## Slack Features
-
-- **Block Kit formatting** — messages use Slack's Block Kit for clean rendering
-- **Live thinking indicator** — shows Claude's thinking process in real-time, auto-deletes when done
-- **Auto-split** — responses over 3000 chars are split at line boundaries into code-block chunks
-- **Thread replies** — team members reply in the Slack thread, feedback is injected at turn boundaries
-- **Private groups** — works with private channels, group DMs (mpim), and direct messages
-
-## How It Works
-
-pairplan runs Claude Code as a subprocess in `--output-format stream-json` mode, parses the event stream, displays output in the terminal, and mirrors everything to a Slack thread. Team feedback from Slack is polled every 3 seconds and injected into Claude's conversation at turn boundaries.
+Same app setup as bot tokens, using User Token Scopes.
 
 ## Platform Support
 

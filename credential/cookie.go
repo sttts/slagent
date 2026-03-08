@@ -1,4 +1,4 @@
-package extract
+package credential
 
 import (
 	"database/sql"
@@ -12,7 +12,7 @@ import (
 // extractCookie reads and decrypts the 'd' cookie from Slack's Cookies SQLite DB.
 func extractCookie(cookiesPath string) (string, error) {
 	// Copy to temp file (Slack may hold a WAL lock)
-	tmpFile, err := os.CreateTemp("", "pairplan-cookies-*.sqlite")
+	tmpFile, err := os.CreateTemp("", "slagent-cookies-*.sqlite")
 	if err != nil {
 		return "", fmt.Errorf("create temp file: %w", err)
 	}

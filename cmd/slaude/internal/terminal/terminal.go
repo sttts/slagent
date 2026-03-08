@@ -1,4 +1,4 @@
-// Package terminal handles simple terminal output and input for pairplan.
+// Package terminal handles simple terminal output for slaude.
 package terminal
 
 import (
@@ -21,7 +21,7 @@ const (
 	showCursor = "\033[?25h"
 )
 
-// UI provides simple terminal output for pairplan sessions.
+// UI provides simple terminal output for slaude sessions.
 type UI struct {
 	w         io.Writer
 	streaming bool // true while Claude is streaming text
@@ -39,7 +39,7 @@ func NewWithWriter(w io.Writer) *UI {
 
 // Banner prints the session start info.
 func (u *UI) Banner(topic, channel, threadURL string) {
-	fmt.Fprintf(u.w, "\n%s%s🧵 pairplan %s", bold, green, reset)
+	fmt.Fprintf(u.w, "\n%s%s🧵 slaude%s", bold, green, reset)
 	if topic != "" {
 		fmt.Fprintf(u.w, " — %s", topic)
 	}

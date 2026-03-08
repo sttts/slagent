@@ -1,5 +1,5 @@
-// Package slack provides Slack credentials and channel/user resolution for pairplan.
-package slack
+// Package channel provides Slack channel and user resolution.
+package channel
 
 import (
 	"encoding/json"
@@ -14,6 +14,8 @@ import (
 	"time"
 
 	slackapi "github.com/slack-go/slack"
+
+	"github.com/sttts/slagent/credential"
 )
 
 // Client wraps the Slack API for credential-based channel and user resolution.
@@ -30,14 +32,6 @@ type Client struct {
 	ownUserID string // set via auth.test for user/session tokens
 }
 
-// Credentials holds the stored Slack token.
-type Credentials struct {
-	Token    string `json:"token,omitempty"`
-	Type     string `json:"type,omitempty"`     // "bot", "user", or "session"
-	Cookie   string `json:"cookie,omitempty"`   // xoxd-... for xoxc session tokens
-	BotToken string `json:"bot_token,omitempty"` // backwards compat
-}
-
 // cookieHTTPClient wraps http.Client and injects the d= cookie on every request.
 type cookieHTTPClient struct {
 	inner  *http.Client
@@ -49,68 +43,9 @@ func (c *cookieHTTPClient) Do(req *http.Request) (*http.Response, error) {
 	return c.inner.Do(req)
 }
 
-// EffectiveToken returns the token to use, preferring Token over BotToken.
-func (c *Credentials) EffectiveToken() string {
-	if c.Token != "" {
-		return c.Token
-	}
-	return c.BotToken
-}
-
-// EffectiveType returns the token type, inferring from prefix if not set.
-func (c *Credentials) EffectiveType() string {
-	if c.Type != "" {
-		return c.Type
-	}
-	token := c.EffectiveToken()
-	switch {
-	case strings.HasPrefix(token, "xoxp-"):
-		return "user"
-	case strings.HasPrefix(token, "xoxc-"):
-		return "session"
-	default:
-		return "bot"
-	}
-}
-
-// CredentialsPath returns the path to the credentials file.
-func CredentialsPath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "pairplan", "credentials.json")
-}
-
-// LoadCredentials reads stored credentials.
-func LoadCredentials() (*Credentials, error) {
-	data, err := os.ReadFile(CredentialsPath())
-	if err != nil {
-		return nil, fmt.Errorf("no credentials found (run 'pairplan auth'): %w", err)
-	}
-	var creds Credentials
-	if err := json.Unmarshal(data, &creds); err != nil {
-		return nil, fmt.Errorf("parse credentials: %w", err)
-	}
-	if creds.EffectiveToken() == "" {
-		return nil, fmt.Errorf("empty token (run 'pairplan auth')")
-	}
-	return &creds, nil
-}
-
-// SaveCredentials writes credentials to disk.
-func SaveCredentials(creds *Credentials) error {
-	path := CredentialsPath()
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	data, err := json.MarshalIndent(creds, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, data, 0o600)
-}
-
 // New creates a Slack client from stored credentials for channel/user resolution.
 func New() (*Client, error) {
-	creds, err := LoadCredentials()
+	creds, err := credential.Load()
 	if err != nil {
 		return nil, err
 	}
@@ -447,7 +382,7 @@ const usersCacheTTL = 1 * time.Hour
 
 func usersCachePath() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "pairplan", "users-cache.json")
+	return filepath.Join(home, ".config", "slagent", "users-cache.json")
 }
 
 // loadUsersCache returns cached users if the cache is fresh.

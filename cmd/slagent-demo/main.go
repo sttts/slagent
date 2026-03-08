@@ -8,8 +8,9 @@ import (
 
 	"github.com/alecthomas/kong"
 
-	"github.com/sttts/pairplan/pkg/slagent"
-	pslack "github.com/sttts/pairplan/pkg/slack"
+	"github.com/sttts/slagent"
+	slackchan "github.com/sttts/slagent/channel"
+	"github.com/sttts/slagent/credential"
 )
 
 var cli struct {
@@ -41,7 +42,7 @@ func main() {
 
 // setupThread creates a slagent.Thread using shared CLI flags.
 func setupThread(channel string, users []string, resumeTS string) (*slagent.Thread, error) {
-	creds, err := pslack.LoadCredentials()
+	creds, err := credential.Load()
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +50,7 @@ func setupThread(channel string, users []string, resumeTS string) (*slagent.Thre
 	// Resolve channel/user
 	ch := channel
 	if len(users) > 0 {
-		client, err := pslack.New()
+		client, err := slackchan.New()
 		if err != nil {
 			return nil, err
 		}
@@ -58,7 +59,7 @@ func setupThread(channel string, users []string, resumeTS string) (*slagent.Thre
 			return nil, fmt.Errorf("resolving user: %w", err)
 		}
 	} else if ch != "" && !isSlackID(ch) {
-		client, err := pslack.New()
+		client, err := slackchan.New()
 		if err != nil {
 			return nil, err
 		}

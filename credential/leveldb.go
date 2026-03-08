@@ -1,4 +1,4 @@
-package extract
+package credential
 
 import (
 	"encoding/binary"
@@ -25,7 +25,7 @@ type Workspace struct {
 // extractTokens reads xoxc tokens from Slack's LevelDB.
 func extractTokens(leveldbDir string) ([]Workspace, error) {
 	// Copy to temp dir (Slack holds the lock on the original)
-	tmpDir, err := os.MkdirTemp("", "pairplan-leveldb-*")
+	tmpDir, err := os.MkdirTemp("", "slagent-leveldb-*")
 	if err != nil {
 		return nil, fmt.Errorf("create temp dir: %w", err)
 	}

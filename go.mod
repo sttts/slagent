@@ -1,4 +1,4 @@
-module github.com/sttts/pairplan
+module github.com/sttts/slagent
 
 go 1.25.5
 
