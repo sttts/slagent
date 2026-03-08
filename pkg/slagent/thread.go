@@ -8,6 +8,14 @@ import (
 	slackapi "github.com/slack-go/slack"
 )
 
+// logSlack writes a Slack API action to the Thread's log writer if configured.
+func (t *Thread) logSlack(action, content string) {
+	if t.config.slackLog == nil {
+		return
+	}
+	fmt.Fprintf(t.config.slackLog, "[slack] %s: %s\n", action, content)
+}
+
 // Thread manages an agent session in a Slack thread.
 type Thread struct {
 	api      *slackapi.Client
@@ -59,6 +67,7 @@ func (t *Thread) Start(title string) (string, error) {
 		label = fmt.Sprintf(":thread: :claude: %s", title)
 	}
 
+	t.logSlack("postMessage(thread-start)", label)
 	_, ts, err := t.api.PostMessage(
 		t.channel,
 		slackapi.MsgOptionText(label, false),
@@ -107,7 +116,7 @@ func (t *Thread) NewTurn() Turn {
 	if isNativeToken(t.token) {
 		w = newNativeTurn(t.token, t.config.apiURL, t.channel, threadTS, t.config.markdownConverter, posted, t.config.bufferSize)
 	} else {
-		w = newCompatTurn(t.api, t.channel, threadTS, posted)
+		w = newCompatTurn(t.api, t.channel, threadTS, posted, t.config.slackLog)
 	}
 	return &turnImpl{w: w}
 }
@@ -122,6 +131,7 @@ func (t *Thread) Post(text string) error {
 		return fmt.Errorf("no active thread")
 	}
 
+	t.logSlack("postMessage(post)", text)
 	_, ts, err := t.api.PostMessage(
 		t.channel,
 		slackapi.MsgOptionText(text, false),
@@ -149,6 +159,7 @@ func (t *Thread) PostPrompt(text string, reactions []string) (string, error) {
 		return "", fmt.Errorf("no active thread")
 	}
 
+	t.logSlack("postMessage(prompt)", text)
 	_, ts, err := t.api.PostMessage(
 		t.channel,
 		slackapi.MsgOptionText(text, false),
@@ -227,6 +238,7 @@ func (t *Thread) PostBlocks(fallback string, blocks ...slackapi.Block) error {
 		return fmt.Errorf("no active thread")
 	}
 
+	t.logSlack("postMessage(blocks)", fallback)
 	_, ts, err := t.api.PostMessage(
 		t.channel,
 		slackapi.MsgOptionBlocks(blocks...),
@@ -260,10 +272,12 @@ func (t *Thread) PostUser(user, text string) error {
 		slackapi.NewTextBlockObject("mrkdwn", text, false, false),
 		nil, nil,
 	)
+	fallback := fmt.Sprintf("@%s: %s", user, text)
+	t.logSlack("postMessage(user)", fallback)
 	_, ts, err := t.api.PostMessage(
 		t.channel,
 		slackapi.MsgOptionBlocks(ctx, section),
-		slackapi.MsgOptionText(fmt.Sprintf("@%s: %s", user, text), false),
+		slackapi.MsgOptionText(fallback, false),
 		slackapi.MsgOptionTS(threadTS),
 	)
 	if err != nil {
@@ -294,6 +308,7 @@ func (t *Thread) PostMarkdown(text string) error {
 			slackapi.NewTextBlockObject("mrkdwn", fenced, false, false),
 			nil, nil,
 		)
+		t.logSlack("postMessage(markdown)", fenced)
 		_, ts, err := t.api.PostMessage(
 			t.channel,
 			slackapi.MsgOptionBlocks(section),

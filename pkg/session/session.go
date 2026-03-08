@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -57,7 +58,19 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	ui := terminal.New()
+	// Terminal output: stdout, or tee to terminal.log in debug mode
+	var ui *terminal.UI
+	if cfg.Debug {
+		termLog, err := os.Create("terminal.log")
+		if err != nil {
+			return nil, fmt.Errorf("create terminal.log: %w", err)
+		}
+		defer termLog.Close()
+		ui = terminal.NewWithWriter(io.MultiWriter(os.Stdout, termLog))
+	} else {
+		ui = terminal.New()
+	}
+
 	sess := &Session{
 		cfg:         cfg,
 		ui:          ui,
@@ -72,7 +85,7 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 		}
 		defer f.Close()
 		sess.debugLog = f
-		ui.Info("📝 Debug log: debug.log (tail -f debug.log)")
+		ui.Info("📝 Debug logs: debug.log, slack.log, terminal.log")
 	}
 
 	// Set up Slack if channel is specified
@@ -88,6 +101,16 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 		resp, err := client.AuthTest()
 		if err == nil && resp.UserID != "" {
 			opts = append(opts, slagent.WithOwner(resp.UserID))
+		}
+
+		// Log Slack API calls in debug mode
+		if cfg.Debug {
+			slackLog, err := os.Create("slack.log")
+			if err != nil {
+				return nil, fmt.Errorf("create slack.log: %w", err)
+			}
+			defer slackLog.Close()
+			opts = append(opts, slagent.WithSlackLog(slackLog))
 		}
 
 		sess.thread = slagent.NewThread(client, creds.EffectiveToken(), cfg.Channel, opts...)

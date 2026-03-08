@@ -2,6 +2,7 @@ package slagent
 
 import (
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"time"
@@ -24,6 +25,7 @@ type compatTurn struct {
 	channel  string
 	threadTS string
 	posted   func(ts string)
+	slackLog io.Writer // optional Slack API logger
 
 	// Unified activity message (thinking + tools + status)
 	thinkBuf   strings.Builder // accumulated thinking text
@@ -44,14 +46,23 @@ type compatTurn struct {
 	mu sync.Mutex
 }
 
-func newCompatTurn(api *slackapi.Client, channel, threadTS string, posted func(string)) *compatTurn {
+func newCompatTurn(api *slackapi.Client, channel, threadTS string, posted func(string), slackLog io.Writer) *compatTurn {
 	return &compatTurn{
 		api:       api,
 		channel:   channel,
 		threadTS:  threadTS,
 		posted:    posted,
+		slackLog:  slackLog,
 		toolIndex: make(map[string]int),
 	}
+}
+
+// logSlack writes a Slack API action to the log writer. Must be called with lock held.
+func (c *compatTurn) logSlack(action, content string) {
+	if c.slackLog == nil {
+		return
+	}
+	fmt.Fprintf(c.slackLog, "[slack] %s: %s\n", action, content)
 }
 
 // textMsgOpts returns message options for a text message with 🤖 prefix.
@@ -113,6 +124,7 @@ func (c *compatTurn) postActivity() {
 	)
 
 	if c.activityTS == "" {
+		c.logSlack("postMessage(activity)", display)
 		_, ts, err := c.api.PostMessage(
 			c.channel,
 			slackapi.MsgOptionBlocks(ctx),
@@ -124,6 +136,7 @@ func (c *compatTurn) postActivity() {
 			c.posted(ts)
 		}
 	} else {
+		c.logSlack("updateMessage(activity)", display)
 		c.api.UpdateMessage(
 			c.channel,
 			c.activityTS,
@@ -253,7 +266,9 @@ func (c *compatTurn) postText() {
 	full := c.textBuf.String()
 	opt := textMsgOpts(full)
 
+	converted := "🤖 " + MarkdownToMrkdwn(full)
 	if c.textTS == "" {
+		c.logSlack("postMessage(text)", converted)
 		_, ts, err := c.api.PostMessage(
 			c.channel,
 			opt,
@@ -264,6 +279,7 @@ func (c *compatTurn) postText() {
 			c.posted(ts)
 		}
 	} else {
+		c.logSlack("updateMessage(text)", converted)
 		c.api.UpdateMessage(
 			c.channel,
 			c.textTS,
@@ -340,13 +356,16 @@ func (c *compatTurn) finish() error {
 	}
 
 	// Update existing text message with full content
+	finalConverted := "🤖 " + MarkdownToMrkdwn(finalText)
 	if c.textTS != "" {
+		c.logSlack("updateMessage(text/final)", finalConverted)
 		c.api.UpdateMessage(
 			c.channel,
 			c.textTS,
 			textMsgOpts(finalText),
 		)
 	} else {
+		c.logSlack("postMessage(text/final)", finalConverted)
 		_, ts, err := c.api.PostMessage(
 			c.channel,
 			textMsgOpts(finalText),

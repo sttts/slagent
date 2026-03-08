@@ -9,6 +9,7 @@ package slagent
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -38,7 +39,8 @@ type threadConfig struct {
 	pollInterval      time.Duration
 	bufferSize        int
 	markdownConverter func(string) string
-	apiURL            string // base URL for native streaming API calls (testing)
+	apiURL            string     // base URL for native streaming API calls (testing)
+	slackLog          io.Writer  // if non-nil, log all Slack API calls here
 }
 
 func defaultConfig() threadConfig {
@@ -77,6 +79,11 @@ func WithMarkdownConverter(fn func(string) string) ThreadOption {
 // withAPIURL sets the base URL for native streaming API calls (testing only).
 func withAPIURL(url string) ThreadOption {
 	return func(c *threadConfig) { c.apiURL = url }
+}
+
+// WithSlackLog enables logging of all Slack API calls to w.
+func WithSlackLog(w io.Writer) ThreadOption {
+	return func(c *threadConfig) { c.slackLog = w }
 }
 
 // NewSlackClient creates a *slack.Client with optional cookie support.
