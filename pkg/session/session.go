@@ -264,10 +264,13 @@ func (s *Session) readTurn() error {
 			lastToolDetail = toolDetail(evt.ToolName, evt.ToolInput)
 			s.ui.ToolActivity(formatTool(evt.ToolName, evt.ToolInput))
 
-			// Skip internal/interactive tools in Slack — these are
-			// between the terminal user and Claude, not for observers.
-			if turn != nil && !isInteractiveTool(evt.ToolName) {
-				turn.Tool(lastToolID, evt.ToolName, slagent.ToolRunning, lastToolDetail)
+			if turn != nil {
+				if prompt := interactivePrompt(evt.ToolName, evt.ToolInput); prompt != "" {
+					// Post interactive tools as prominent standalone messages
+					s.thread.Post(prompt)
+				} else {
+					turn.Tool(lastToolID, evt.ToolName, slagent.ToolRunning, lastToolDetail)
+				}
 			}
 
 		case claude.TypeResult:
@@ -336,14 +339,34 @@ func currentUser() string {
 	return u.Username
 }
 
-// isInteractiveTool returns true for tools that are interactive prompts
-// between Claude and the terminal user, not relevant for Slack observers.
-func isInteractiveTool(name string) bool {
-	switch name {
-	case "ExitPlanMode", "EnterPlanMode", "AskUserQuestion":
-		return true
+// interactivePrompt returns a formatted Slack message for interactive tools,
+// or "" if the tool is not interactive.
+func interactivePrompt(toolName, rawInput string) string {
+	var input map[string]interface{}
+	json.Unmarshal([]byte(rawInput), &input)
+
+	str := func(key string) string {
+		if v, ok := input[key]; ok {
+			if s, ok := v.(string); ok {
+				return s
+			}
+		}
+		return ""
 	}
-	return false
+
+	switch toolName {
+	case "ExitPlanMode":
+		return "🗳️ *Claude wants to exit plan mode.* Awaiting approval in terminal."
+	case "EnterPlanMode":
+		return "🗳️ *Claude wants to enter plan mode.* Awaiting approval in terminal."
+	case "AskUserQuestion":
+		q := str("question")
+		if q == "" {
+			return "❓ *Claude has a question.* Awaiting answer in terminal."
+		}
+		return fmt.Sprintf("❓ *Claude asks:* %s", q)
+	}
+	return ""
 }
 
 // toolDetail extracts the raw detail string for slagent (no emoji).
