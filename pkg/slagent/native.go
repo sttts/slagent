@@ -27,6 +27,7 @@ type nativeTurn struct {
 	flushed  int             // bytes of fullText already flushed
 	thinkBuf strings.Builder // accumulated thinking text
 	started  bool
+	question bool // replace trailing ? with ❓ on finish
 
 	mu sync.Mutex
 }
@@ -195,6 +196,12 @@ func (n *nativeTurn) writeTool(id, name, status, detail string) {
 	})
 }
 
+func (n *nativeTurn) markQuestion() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.question = true
+}
+
 func (n *nativeTurn) writeStatus(text string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -220,6 +227,17 @@ func (n *nativeTurn) writeStatus(text string) {
 func (n *nativeTurn) finish() error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+
+	// Replace trailing ? with ❓ for question turns
+	if n.question && n.fullText.Len() > 0 {
+		s := strings.TrimRight(n.fullText.String(), "\n ")
+		n.fullText.Reset()
+		if strings.HasSuffix(s, "?") {
+			n.fullText.WriteString(s[:len(s)-1] + " ❓")
+		} else {
+			n.fullText.WriteString(s + " ❓")
+		}
+	}
 
 	// Flush remaining text (may lazily start the stream)
 	n.flushText()

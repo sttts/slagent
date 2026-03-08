@@ -290,7 +290,7 @@ func TestCompatTextFlushedBeforeThinking(t *testing.T) {
 	turn.Finish()
 }
 
-func TestCompatTextHasRobotPrefixAndCodeBlock(t *testing.T) {
+func TestCompatTextHasInlineRobotPrefix(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
@@ -316,18 +316,18 @@ func TestCompatTextHasRobotPrefixAndCodeBlock(t *testing.T) {
 
 	content := textMsg.blockText()
 
-	// Must start with 🤖 prefix
-	if !strings.HasPrefix(content, "🤖\n") {
-		t.Errorf("text message should start with 🤖, got: %q", content)
+	// Must start with "🤖 " inline (not on a separate line)
+	if !strings.HasPrefix(content, "🤖 ") {
+		t.Errorf("text message should start with '🤖 ', got: %q", content)
 	}
 
-	// Must be wrapped in code block
-	if !strings.Contains(content, "```\nHello world\n```") {
-		t.Errorf("text message should be in code block, got: %q", content)
+	// Must contain the text (converted via MarkdownToMrkdwn)
+	if !strings.Contains(content, "Hello world") {
+		t.Errorf("text message should contain 'Hello world', got: %q", content)
 	}
 }
 
-func TestCompatTextEscapesEmbeddedCodeFences(t *testing.T) {
+func TestCompatTextMarkdownConverted(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
@@ -335,7 +335,7 @@ func TestCompatTextEscapesEmbeddedCodeFences(t *testing.T) {
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
-	turn.Text("Here is code:\n```go\nfunc main() {}\n```\nDone.")
+	turn.Text("# Heading\n**bold** and [link](http://example.com)")
 	turn.Finish()
 
 	active := mock.activeMessages()
@@ -352,18 +352,12 @@ func TestCompatTextEscapesEmbeddedCodeFences(t *testing.T) {
 
 	content := textMsg.blockText()
 
-	// Embedded ``` must be escaped to ''' so they don't break the outer code block
-	if strings.Contains(content, "```go") {
-		t.Errorf("embedded code fences should be escaped, got: %q", content)
+	// Markdown headings → bold, **bold** → *bold*, links → Slack format
+	if !strings.Contains(content, "*Heading*") {
+		t.Errorf("heading should be converted to bold, got: %q", content)
 	}
-	if !strings.Contains(content, "'''go") {
-		t.Errorf("embedded code fences should become ''', got: %q", content)
-	}
-
-	// The outer code block fences should still be present (exactly 2 occurrences of ```)
-	outerFences := strings.Count(content, "```")
-	if outerFences != 2 {
-		t.Errorf("expected exactly 2 outer ``` fences, got %d in: %q", outerFences, content)
+	if !strings.Contains(content, "<http://example.com|link>") {
+		t.Errorf("link should be converted to Slack format, got: %q", content)
 	}
 }
 
@@ -548,6 +542,152 @@ func TestCompatActivityDebounceFlushed(t *testing.T) {
 	}
 
 	turn.Finish()
+}
+
+func TestCompatMarkQuestionReplacesTrailingQuestionMark(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread.Resume("1700000001.000000")
+
+	turn := thread.NewTurn()
+	turn.Text("<@U123>: ")
+	turn.Text("What do you mean by Sandbox?")
+	turn.MarkQuestion()
+	turn.Finish()
+
+	// Find the text message
+	active := mock.activeMessages()
+	var textMsg *mockMessage
+	for i, m := range active {
+		if m.Text != "activity" {
+			textMsg = &active[i]
+			break
+		}
+	}
+	if textMsg == nil {
+		t.Fatal("no text message found")
+	}
+
+	content := textMsg.blockText()
+
+	// Must end with ❓, not ?
+	if strings.Contains(content, "Sandbox?") {
+		t.Errorf("trailing ? should be replaced with ❓, got: %q", content)
+	}
+	if !strings.Contains(content, "Sandbox ❓") {
+		t.Errorf("should end with ' ❓', got: %q", content)
+	}
+
+	// Must have @mention inline with 🤖
+	if !strings.HasPrefix(content, "🤖 <@U123>: ") {
+		t.Errorf("should start with '🤖 <@U123>: ', got: %q", content)
+	}
+}
+
+func TestCompatMarkQuestionAppendsWhenNoQuestionMark(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread.Resume("1700000001.000000")
+
+	turn := thread.NewTurn()
+	turn.Text("<@U123>: ")
+	turn.Text("Please clarify what you mean.")
+	turn.MarkQuestion()
+	turn.Finish()
+
+	active := mock.activeMessages()
+	var textMsg *mockMessage
+	for i, m := range active {
+		if m.Text != "activity" {
+			textMsg = &active[i]
+			break
+		}
+	}
+	if textMsg == nil {
+		t.Fatal("no text message found")
+	}
+
+	content := textMsg.blockText()
+
+	// No trailing ?, so ❓ should be appended
+	if !strings.HasSuffix(content, " ❓") {
+		t.Errorf("should end with ' ❓', got: %q", content)
+	}
+}
+
+func TestCompatNoMarkQuestionKeepsQuestionMark(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread.Resume("1700000001.000000")
+
+	// Regular turn (not a question) — should NOT modify trailing ?
+	turn := thread.NewTurn()
+	turn.Text("Should we proceed?")
+	turn.Finish()
+
+	active := mock.activeMessages()
+	var textMsg *mockMessage
+	for i, m := range active {
+		if m.Text != "activity" {
+			textMsg = &active[i]
+			break
+		}
+	}
+	if textMsg == nil {
+		t.Fatal("no text message found")
+	}
+
+	content := textMsg.blockText()
+
+	// Without MarkQuestion(), the ? stays as-is
+	if !strings.Contains(content, "proceed?") {
+		t.Errorf("regular turn should keep ?, got: %q", content)
+	}
+	if strings.Contains(content, "❓") {
+		t.Errorf("regular turn should not have ❓, got: %q", content)
+	}
+}
+
+func TestCompatMarkQuestionMultipleQuestionMarks(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread.Resume("1700000001.000000")
+
+	turn := thread.NewTurn()
+	turn.Text("<@U123>: ")
+	turn.Text("What do you want? Could you clarify?")
+	turn.MarkQuestion()
+	turn.Finish()
+
+	active := mock.activeMessages()
+	var textMsg *mockMessage
+	for i, m := range active {
+		if m.Text != "activity" {
+			textMsg = &active[i]
+			break
+		}
+	}
+	if textMsg == nil {
+		t.Fatal("no text message found")
+	}
+
+	content := textMsg.blockText()
+
+	// Only the LAST ? is replaced
+	if !strings.Contains(content, "want?") {
+		t.Errorf("first ? should be kept, got: %q", content)
+	}
+	if !strings.Contains(content, "clarify ❓") {
+		t.Errorf("last ? should be replaced with ❓, got: %q", content)
+	}
 }
 
 func TestCompatFinishFullText(t *testing.T) {

@@ -14,6 +14,10 @@ type Turn interface {
 	// Status shows a transient status line.
 	Status(text string)
 
+	// MarkQuestion marks this turn as a question. On finish, trailing "?" is
+	// replaced with " ❓" for visual emphasis.
+	MarkQuestion()
+
 	// Finish finalizes the turn. Must be called exactly once.
 	Finish() error
 }
@@ -24,6 +28,7 @@ type turnWriter interface {
 	writeThinking(text string)
 	writeTool(id, name, status, detail string)
 	writeStatus(text string)
+	markQuestion()
 	finish() error
 }
 
@@ -36,4 +41,5 @@ func (t *turnImpl) Thinking(text string)                    { t.w.writeThinking(
 func (t *turnImpl) Tool(id, name, status, detail string)    { t.w.writeTool(id, name, status, detail) }
 func (t *turnImpl) Text(text string)                        { t.w.writeText(text) }
 func (t *turnImpl) Status(text string)                      { t.w.writeStatus(text) }
+func (t *turnImpl) MarkQuestion()                           { t.w.markQuestion() }
 func (t *turnImpl) Finish() error                           { return t.w.finish() }

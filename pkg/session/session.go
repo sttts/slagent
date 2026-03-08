@@ -134,10 +134,6 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 
 	// Send initial topic (skip on resume — Claude already has context)
 	if cfg.ResumeSessionID == "" {
-		if sess.thread != nil {
-			username := currentUser()
-			sess.thread.PostUser(username, cfg.Topic)
-		}
 		if err := proc.Send(cfg.Topic); err != nil {
 			return nil, fmt.Errorf("send topic: %w", err)
 		}
@@ -276,6 +272,14 @@ func (s *Session) readTurn() error {
 				if p := interactivePrompt(evt.ToolName, evt.ToolInput, s.thread.OwnerID()); p != nil {
 					// Post interactive tools with reaction emojis for response
 					s.thread.PostPrompt(p.text, p.reactions)
+					lastToolID = "" // don't track in activity
+				} else if evt.ToolName == "AskUserQuestion" {
+					// Free-text question: prepend @mention, append ❓ on finish
+					if ownerID := s.thread.OwnerID(); ownerID != "" {
+						turn.Text(fmt.Sprintf("<@%s>: ", ownerID))
+					}
+					turn.MarkQuestion()
+					lastToolID = "" // don't track in activity
 				} else {
 					turn.Tool(lastToolID, evt.ToolName, slagent.ToolRunning, lastToolDetail)
 				}
@@ -396,9 +400,6 @@ func interactivePrompt(toolName, rawInput, ownerID string) *promptMsg {
 		}
 	case "AskUserQuestion":
 		q := str("question")
-		if q == "" {
-			q = "Claude has a question."
-		}
 
 		// Check for allowedPrompts (multiple choice options)
 		if raw, ok := input["allowedPrompts"]; ok {
@@ -421,10 +422,8 @@ func interactivePrompt(toolName, rawInput, ownerID string) *promptMsg {
 			}
 		}
 
-		return &promptMsg{
-			text:      fmt.Sprintf("❓ *Claude asks:*%s\n%s", mention, q),
-			reactions: []string{"white_check_mark", "x"},
-		}
+		// Free-text question — handled in readTurn (prepend @mention + MarkQuestion)
+		return nil
 	}
 	return nil
 }
@@ -559,6 +558,8 @@ func toolDetail(toolName, rawInput string) string {
 		return "switching to plan mode"
 	case "AskUserQuestion":
 		return str("question")
+	case "ToolSearch":
+		return str("query")
 	case "TodoWrite", "TaskCreate", "TaskUpdate":
 		return str("subject")
 	default:
@@ -618,6 +619,8 @@ func formatTool(toolName, rawInput string) string {
 		return fmt.Sprintf("🌐 %s", str("url"))
 	case "WebSearch":
 		return fmt.Sprintf("🔎 %s", str("query"))
+	case "ToolSearch":
+		return fmt.Sprintf("🔍 %s", str("query"))
 	case "TodoWrite", "TaskCreate", "TaskUpdate":
 		return fmt.Sprintf("📋 %s", str("subject"))
 	case "ExitPlanMode":

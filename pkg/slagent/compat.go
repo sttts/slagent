@@ -38,6 +38,7 @@ type compatTurn struct {
 	textTS     string
 	textUpdate time.Time
 	textTimer  *time.Timer // debounce timer for text flush
+	question   bool        // replace trailing ? with ❓ on finish
 
 	mu sync.Mutex
 }
@@ -52,12 +53,11 @@ func newCompatTurn(api *slackapi.Client, channel, threadTS string, posted func(s
 	}
 }
 
-// textMsgOpts returns message options for a text message in a code block with 🤖 prefix.
-// Uses plain text (no blocks) to avoid section block padding.
-// Embedded triple-backtick fences are replaced with ''' to avoid breaking the outer block.
+// textMsgOpts returns message options for a text message with 🤖 prefix.
+// Converts markdown to Slack mrkdwn format.
 func textMsgOpts(display string) slackapi.MsgOption {
-	escaped := strings.ReplaceAll(display, "```", "'''")
-	return slackapi.MsgOptionText("🤖\n```\n"+escaped+"\n```", false)
+	converted := MarkdownToMrkdwn(display)
+	return slackapi.MsgOptionText("🤖 "+converted, false)
 }
 
 // renderActivity builds the activity message content from thinking + activity lines,
@@ -225,6 +225,12 @@ func (c *compatTurn) writeTool(id, name, status, detail string) {
 	c.flushActivity()
 }
 
+func (c *compatTurn) markQuestion() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.question = true
+}
+
 func (c *compatTurn) writeStatus(text string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -331,6 +337,16 @@ func (c *compatTurn) finish() error {
 	finalText := c.textBuf.String()
 	if finalText == "" {
 		return nil
+	}
+
+	// Replace trailing ? with ❓ for question turns
+	if c.question {
+		finalText = strings.TrimRight(finalText, "\n ")
+		if strings.HasSuffix(finalText, "?") {
+			finalText = finalText[:len(finalText)-1] + " ❓"
+		} else {
+			finalText += " ❓"
+		}
 	}
 
 	// Update existing text message with full content
