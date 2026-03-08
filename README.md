@@ -1,5 +1,7 @@
 # slagent
 
+> **Experimental** — this project is under active development. APIs, CLI flags, and behavior may change without notice. Use at your own risk.
+
 Go library for streaming agent sessions to Slack threads.
 
 ## Library

@@ -106,12 +106,29 @@ thread.PostMarkdown(planText)             // content in code block
 Thread parent message format: `:thread: <title>` (plain text for emoji
 shortcode rendering).
 
+## Message Identity and Stabilization
+
+Every message posted by slagent carries a `block_id` with the prefix `slagent-{instanceID}`.
+The instance ID is an 8-char random hex string, unique per slaude process, inherited on resume.
+
+Block ID suffixes encode message state:
+
+| Suffix | Meaning | Poller behavior |
+|--------|---------|-----------------|
+| (none) | Finalized text | Skip if our instance; deliver if another instance |
+| `~`    | Streaming text | Always skip, don't advance cursor (re-check next poll) |
+| `~act` | Activity | Always skip from all instances |
+
+This allows multiple slaude instances in the same thread to see each other's
+finalized messages as replies, while ignoring in-flight streaming and transient
+activity.
+
 ## Reply Polling and Authorization
 
 `thread.PollReplies()` / `thread.Replies(ctx)` poll `conversations.replies`:
 
 - Skip parent message and already-seen messages (tracked via `lastTS`)
-- Skip messages we posted (tracked via `postedTS` map)
+- Classify slagent blocks by kind and source instance (see above)
 - Skip bot messages (`BotID != ""`)
 - Handle `!open` / `!close` commands (toggle open access)
 - Check authorization: owner only by default, all participants if open access

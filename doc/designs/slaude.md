@@ -47,7 +47,7 @@ slaude -c CHANNEL -- --permission-mode plan --resume SESSION_ID "topic"
 | `-c, --channel` | Slack channel name or ID |
 | `-u, --user` | Slack user(s) for DM |
 | `-w, --workspace` | Slack workspace URL (uses default if omitted) |
-| `--resume-thread` | Slack thread TS to resume |
+| `--resume-thread` | Slack thread URL or TS to resume |
 | `--debug` | Write debug logs |
 | `[topic...]` | Positional topic arg |
 
@@ -57,10 +57,23 @@ controlled by the user directly.
 
 ### Subcommands
 
+- `slaude start` — start a new session mirrored to Slack
+- `slaude join URL` — join an existing thread with a new slaude instance (planned)
+- `slaude resume URL#instanceID -- --resume SESSION_ID` — resume an existing session (planned)
 - `slaude auth` — extract credentials from Slack desktop app (default), or `--manual` to paste a token
 - `slaude channels` — list accessible channels
 - `slaude share FILE -c CHANNEL` — post a plan file to Slack
 - `slaude status` — show workspaces and current configuration
+
+### Thread URLs
+
+`--resume-thread` accepts Slack permalink URLs:
+```
+https://workspace.slack.com/archives/CHANNEL/pTIMESTAMP#instanceID
+```
+
+The channel and thread timestamp are extracted from the URL. The `#instanceID`
+fragment carries the slagent instance ID for block_id tagging on resume.
 
 ## Auth
 
