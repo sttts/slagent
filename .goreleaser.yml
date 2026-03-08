@@ -18,8 +18,15 @@ builds:
       - -s -w
 
 archives:
-  - format: tar.gz
-    name_template: "{{ .Binary }}_{{ .Os }}_{{ .Arch }}"
+  - id: slaude
+    builds: [slaude]
+    format: tar.gz
+    name_template: "slaude_{{ .Os }}_{{ .Arch }}"
+
+  - id: slagent-demo
+    builds: [slagent-demo]
+    format: tar.gz
+    name_template: "slagent-demo_{{ .Os }}_{{ .Arch }}"
 
 brews:
   - name: slaude
