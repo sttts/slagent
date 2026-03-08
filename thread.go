@@ -211,21 +211,33 @@ func (t *Thread) NewTurn() Turn {
 }
 
 // Post sends a plain message in the thread.
-func (t *Thread) Post(text string) error {
+func (t *Thread) Post(text string) (string, error) {
 	t.mu.Lock()
 	threadTS := t.threadTS
 	t.mu.Unlock()
 
 	if threadTS == "" {
-		return fmt.Errorf("no active thread")
+		return "", fmt.Errorf("no active thread")
 	}
 
 	t.logSlack("postMessage(post)", text)
-	_, _, err := t.api.PostMessage(
+	_, ts, err := t.api.PostMessage(
 		t.channel,
 		slackapi.MsgOptionBlocks(t.slagentSection(text)),
 		slackapi.MsgOptionText(text, false),
 		slackapi.MsgOptionTS(threadTS),
+	)
+	return ts, err
+}
+
+// UpdateMessage updates an existing message in the thread.
+func (t *Thread) UpdateMessage(msgTS, text string) error {
+	t.logSlack("updateMessage(post)", text)
+	_, _, _, err := t.api.UpdateMessage(
+		t.channel,
+		msgTS,
+		slackapi.MsgOptionBlocks(t.slagentSection(text)),
+		slackapi.MsgOptionText(text, false),
 	)
 	return err
 }

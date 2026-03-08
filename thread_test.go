@@ -136,7 +136,7 @@ func TestThreadPost(t *testing.T) {
 	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
 	thread.Start("Test")
 
-	err := thread.Post("hello from bot")
+	_, err := thread.Post("hello from bot")
 	if err != nil {
 		t.Fatalf("Post: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestThreadPostNoThread(t *testing.T) {
 	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
 	// No Start or Resume — threadTS is empty
 
-	err := thread.Post("should fail")
+	_, err := thread.Post("should fail")
 	if err == nil {
 		t.Error("Post should fail without active thread")
 	}
