@@ -58,7 +58,7 @@ Module: `github.com/sttts/slagent`
 - Trailing `?` replaced with ` ❓` on finish for question turns.
 - Multi-choice AskUserQuestion: separate prompt message with numbered emoji reactions.
 - ExitPlanMode/EnterPlanMode: prompt with ✅/❌ reactions.
-- Thread parent: `:thread: :claude: <title>` (plain text for emoji shortcode rendering).
+- Thread parent: `:thread: <title>` (plain text for emoji shortcode rendering).
 - Code diffs (Edit/Write): posted as separate messages with ``` blocks.
 - Use `--debug` flag to see raw JSON events for troubleshooting.
 

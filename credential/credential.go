@@ -13,16 +13,12 @@ import (
 type Credentials struct {
 	Token    string `json:"token,omitempty"`
 	Type     string `json:"type,omitempty"`      // "bot", "user", or "session"
-	Cookie   string `json:"cookie,omitempty"`     // xoxd-... for xoxc session tokens
-	BotToken string `json:"bot_token,omitempty"` // backwards compat
+	Cookie   string `json:"cookie,omitempty"` // xoxd-... for xoxc session tokens
 }
 
-// EffectiveToken returns the token to use, preferring Token over BotToken.
+// EffectiveToken returns the token.
 func (c *Credentials) EffectiveToken() string {
-	if c.Token != "" {
-		return c.Token
-	}
-	return c.BotToken
+	return c.Token
 }
 
 // EffectiveType returns the token type, inferring from prefix if not set.
@@ -47,24 +43,11 @@ func Path() string {
 	return filepath.Join(home, ".config", "slagent", "credentials.json")
 }
 
-// legacyPath returns the old pairplan credentials path.
-func legacyPath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "pairplan", "credentials.json")
-}
-
 // Load reads stored credentials.
 func Load() (*Credentials, error) {
 	data, err := os.ReadFile(Path())
 	if err != nil {
-		// Fallback: try legacy pairplan path
-		legacyPath := legacyPath()
-		data, err = os.ReadFile(legacyPath)
-		if err != nil {
-			return nil, fmt.Errorf("no credentials found (run 'slaude auth'): %w", err)
-		}
-		fmt.Fprintf(os.Stderr, "⚠️  Reading credentials from deprecated path %s\n", legacyPath)
-		fmt.Fprintf(os.Stderr, "   Run 'slaude auth' to migrate to %s\n", Path())
+		return nil, fmt.Errorf("no credentials found (run 'slaude auth'): %w", err)
 	}
 	var creds Credentials
 	if err := json.Unmarshal(data, &creds); err != nil {
