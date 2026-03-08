@@ -75,10 +75,23 @@ func (t *Thread) pollOnce() ([]Reply, error) {
 			continue
 		}
 
-		// Skip messages posted by slagent (tagged with slagent block_id)
-		if hasSlagentBlock(msg.Blocks) {
+		// Classify slagent blocks by kind and source instance
+		kind, blockInstanceID := classifyBlocks(msg.Blocks)
+		switch kind {
+		case blockActivity:
+			// Activity messages: always skip from all instances
 			t.advanceLastTS(msg.Timestamp)
 			continue
+		case blockStreaming:
+			// Streaming text: not finalized yet, skip (don't advance — re-check next poll)
+			continue
+		case blockFinal:
+			if blockInstanceID == t.instanceID {
+				// Our own finalized message — skip
+				t.advanceLastTS(msg.Timestamp)
+				continue
+			}
+			// Another slaude's finalized message — deliver as reply below
 		}
 
 		// Skip bot messages

@@ -9,17 +9,47 @@ import (
 )
 
 // slagentBlockPrefix is the prefix for block IDs on all slagent-posted messages.
-// The full block_id is "slagent-{instanceID}".
+// The full block_id is "slagent-{instanceID}" with optional suffixes:
+//   - "slagent-{id}"      — finalized text message
+//   - "slagent-{id}~"     — streaming text (not yet final)
+//   - "slagent-{id}~act"  — activity message (always skip)
 const slagentBlockPrefix = "slagent-"
 
-// hasSlagentBlock returns true if any block has a slagent block ID prefix.
-func hasSlagentBlock(blocks slackapi.Blocks) bool {
+// blockKind classifies a slagent block_id.
+type blockKind int
+
+const (
+	blockNone     blockKind = iota // not a slagent block
+	blockFinal                     // finalized text
+	blockStreaming                 // streaming text (not yet final)
+	blockActivity                  // activity (always skip)
+)
+
+// classifyBlock returns the kind and instance ID for a block_id.
+func classifyBlock(blockID string) (blockKind, string) {
+	if !strings.HasPrefix(blockID, slagentBlockPrefix) {
+		return blockNone, ""
+	}
+	rest := blockID[len(slagentBlockPrefix):]
+
+	if strings.HasSuffix(rest, "~act") {
+		return blockActivity, rest[:len(rest)-4]
+	}
+	if strings.HasSuffix(rest, "~") {
+		return blockStreaming, rest[:len(rest)-1]
+	}
+	return blockFinal, rest
+}
+
+// classifyBlocks returns the kind and instance ID of the first slagent block found.
+func classifyBlocks(blocks slackapi.Blocks) (blockKind, string) {
 	for _, b := range blocks.BlockSet {
-		if strings.HasPrefix(b.ID(), slagentBlockPrefix) {
-			return true
+		kind, id := classifyBlock(b.ID())
+		if kind != blockNone {
+			return kind, id
 		}
 	}
-	return false
+	return blockNone, ""
 }
 
 // slagentSection wraps text in a section block tagged with this thread's block_id.

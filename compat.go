@@ -67,6 +67,7 @@ func (c *compatTurn) logSlack(action, content string) {
 
 // textMsgOpts returns message options for a text message with 🤖 prefix.
 // Converts markdown to Slack mrkdwn format. Uses a section block with the given block_id.
+// The block_id should include the appropriate suffix (~, ~act, or none).
 func textMsgOpts(display, blockID string) []slackapi.MsgOption {
 	converted := "🤖 " + MarkdownToMrkdwn(display)
 	section := slackapi.NewSectionBlock(
@@ -127,7 +128,9 @@ func (c *compatTurn) postActivity() {
 		return
 	}
 
-	ctx := slackapi.NewContextBlock(c.blockID,
+	// Activity messages use ~act suffix — always skipped by all pollers
+	actBlockID := c.blockID + "~act"
+	ctx := slackapi.NewContextBlock(actBlockID,
 		slackapi.NewTextBlockObject("mrkdwn", display, false, false),
 	)
 
@@ -268,10 +271,14 @@ func (c *compatTurn) writeText(text string) {
 }
 
 // postText posts or updates the text message with current buffer content.
+// Uses streaming block_id suffix (~) to indicate the message is not yet final.
 // Must be called with lock held.
 func (c *compatTurn) postText() {
 	full := c.textBuf.String()
-	opts := textMsgOpts(full, c.blockID)
+
+	// While streaming, use ~ suffix so pollers know this message isn't final
+	streamBlockID := c.blockID + "~"
+	opts := textMsgOpts(full, streamBlockID)
 
 	converted := "🤖 " + MarkdownToMrkdwn(full)
 	if c.textTS == "" {
@@ -324,7 +331,8 @@ func (c *compatTurn) finish() error {
 	c.postActivity()
 	if c.activityTS != "" {
 		display := c.renderActivity()
-		ctx := slackapi.NewContextBlock(c.blockID,
+		actBlockID := c.blockID + "~act"
+		ctx := slackapi.NewContextBlock(actBlockID,
 			slackapi.NewTextBlockObject("mrkdwn", display, false, false),
 		)
 		c.api.UpdateMessage(
@@ -354,7 +362,7 @@ func (c *compatTurn) finish() error {
 		}
 	}
 
-	// Update existing text message with full content
+	// Update existing text message with full content — use final block_id (no suffix)
 	opts := textMsgOpts(finalText, c.blockID)
 	finalConverted := "🤖 " + MarkdownToMrkdwn(finalText)
 	if c.textTS != "" {

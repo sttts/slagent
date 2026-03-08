@@ -366,6 +366,40 @@ func (m *mockSlack) injectReply(channel, threadTS, userID, text string) string {
 	return ts
 }
 
+// injectSlagentReply adds a reply with slagent block_id (simulating another slaude instance).
+func (m *mockSlack) injectSlagentReply(channel, threadTS, text, blockID string) string {
+	ts := m.nextTS()
+	blocks := fmt.Sprintf(`[{"type":"section","block_id":"%s","text":{"type":"mrkdwn","text":"%s"}}]`, blockID, text)
+	m.mu.Lock()
+	m.messages = append(m.messages, mockMessage{
+		Channel:  channel,
+		ThreadTS: threadTS,
+		Text:     text,
+		Blocks:   json.RawMessage(blocks),
+		TS:       ts,
+	})
+	m.mu.Unlock()
+	return ts
+}
+
+// updateBlockID updates the block_id of an existing message (simulating streaming → final transition).
+func (m *mockSlack) updateBlockID(ts, newBlockID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i, msg := range m.messages {
+		if msg.TS == ts {
+			// Parse existing blocks, update block_id
+			var blocks []map[string]any
+			json.Unmarshal(msg.Blocks, &blocks)
+			if len(blocks) > 0 {
+				blocks[0]["block_id"] = newBlockID
+				m.messages[i].Blocks, _ = json.Marshal(blocks)
+			}
+			return
+		}
+	}
+}
+
 // injectBotReply adds a bot reply message to the mock.
 func (m *mockSlack) injectBotReply(channel, threadTS, botID, text string) string {
 	ts := m.nextTS()

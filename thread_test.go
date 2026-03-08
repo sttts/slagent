@@ -8,6 +8,27 @@ import (
 	slackapi "github.com/slack-go/slack"
 )
 
+func TestClassifyBlock(t *testing.T) {
+	tests := []struct {
+		blockID    string
+		wantKind   blockKind
+		wantID     string
+	}{
+		{"slagent-abc123", blockFinal, "abc123"},
+		{"slagent-abc123~", blockStreaming, "abc123"},
+		{"slagent-abc123~act", blockActivity, "abc123"},
+		{"other-block", blockNone, ""},
+		{"", blockNone, ""},
+		{"slagent-", blockFinal, ""},
+	}
+	for _, tt := range tests {
+		kind, id := classifyBlock(tt.blockID)
+		if kind != tt.wantKind || id != tt.wantID {
+			t.Errorf("classifyBlock(%q) = (%d, %q), want (%d, %q)", tt.blockID, kind, id, tt.wantKind, tt.wantID)
+		}
+	}
+}
+
 func TestIsNativeToken(t *testing.T) {
 	tests := []struct {
 		token string
@@ -286,6 +307,120 @@ func TestPollRepliesSkipsOwnMessages(t *testing.T) {
 	}
 	if replies[0].Text != "human reply" {
 		t.Errorf("reply text = %q, want %q", replies[0].Text, "human reply")
+	}
+}
+
+func TestPollRepliesSkipsStreamingMessages(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+		WithInstanceID("aaaa"),
+	)
+	thread.Start("Test")
+	threadTS := thread.ThreadTS()
+
+	// Another slaude instance posts a streaming message (~ suffix)
+	mock.injectSlagentReply("C_TEST", threadTS, "partial response", "slagent-bbbb~")
+
+	// Should not see any replies (streaming message not finalized)
+	replies, err := thread.PollReplies()
+	if err != nil {
+		t.Fatalf("PollReplies: %v", err)
+	}
+	if len(replies) != 0 {
+		t.Fatalf("replies = %d, want 0 (streaming should be skipped)", len(replies))
+	}
+}
+
+func TestPollRepliesDeliversFinalizedFromOtherInstance(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+		WithInstanceID("aaaa"),
+	)
+	thread.Start("Test")
+	threadTS := thread.ThreadTS()
+
+	// Another slaude instance posts a finalized message (no suffix)
+	mock.injectSlagentReply("C_TEST", threadTS, "other slaude response", "slagent-bbbb")
+
+	replies, err := thread.PollReplies()
+	if err != nil {
+		t.Fatalf("PollReplies: %v", err)
+	}
+	if len(replies) != 1 {
+		t.Fatalf("replies = %d, want 1", len(replies))
+	}
+	if replies[0].Text != "other slaude response" {
+		t.Errorf("reply text = %q, want %q", replies[0].Text, "other slaude response")
+	}
+}
+
+func TestPollRepliesSkipsActivityFromAllInstances(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+		WithInstanceID("aaaa"),
+	)
+	thread.Start("Test")
+	threadTS := thread.ThreadTS()
+
+	// Activity from our instance
+	mock.injectSlagentReply("C_TEST", threadTS, "thinking...", "slagent-aaaa~act")
+
+	// Activity from another instance
+	mock.injectSlagentReply("C_TEST", threadTS, "reading files...", "slagent-bbbb~act")
+
+	// Inject a real user reply after the activity messages
+	mock.injectReply("C_TEST", threadTS, "U_HUMAN", "human reply")
+
+	replies, err := thread.PollReplies()
+	if err != nil {
+		t.Fatalf("PollReplies: %v", err)
+	}
+	if len(replies) != 1 {
+		t.Fatalf("replies = %d, want 1 (activity should be skipped)", len(replies))
+	}
+	if replies[0].Text != "human reply" {
+		t.Errorf("reply text = %q, want %q", replies[0].Text, "human reply")
+	}
+}
+
+func TestPollRepliesStreamingBecomesVisible(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+		WithInstanceID("aaaa"),
+	)
+	thread.Start("Test")
+	threadTS := thread.ThreadTS()
+
+	// Another instance posts a streaming message
+	ts := mock.injectSlagentReply("C_TEST", threadTS, "partial", "slagent-bbbb~")
+
+	// First poll: streaming message skipped, not advanced
+	replies, _ := thread.PollReplies()
+	if len(replies) != 0 {
+		t.Fatalf("first poll: replies = %d, want 0", len(replies))
+	}
+
+	// Simulate finalization: update block_id to remove ~ suffix
+	mock.updateBlockID(ts, "slagent-bbbb")
+
+	// Second poll: now the message is finalized and should be delivered
+	replies, err := thread.PollReplies()
+	if err != nil {
+		t.Fatalf("PollReplies: %v", err)
+	}
+	if len(replies) != 1 {
+		t.Fatalf("second poll: replies = %d, want 1", len(replies))
+	}
+	if replies[0].Text != "partial" {
+		t.Errorf("reply text = %q, want %q", replies[0].Text, "partial")
 	}
 }
 
