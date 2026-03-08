@@ -116,3 +116,95 @@ func TestFormatToolToolSearch(t *testing.T) {
 		t.Errorf("formatTool = %q, want %q", f, "🔍 select:AskUserQuestion")
 	}
 }
+
+func TestFormatTodos(t *testing.T) {
+	tests := []struct {
+		name  string
+		todos []todo
+		want  string
+	}{
+		{
+			name: "mixed statuses",
+			todos: []todo{
+				{Content: "Set up project", Status: "completed"},
+				{Content: "Write tests", Status: "in_progress"},
+				{Content: "Deploy", Status: "pending"},
+			},
+			want: "📋 *Tasks*\n  ✅ ~Set up project~\n  ⏳ Write tests\n  ☐ Deploy",
+		},
+		{
+			name: "all pending",
+			todos: []todo{
+				{Content: "Task A", Status: "pending"},
+				{Content: "Task B", Status: "pending"},
+			},
+			want: "📋 *Tasks*\n  ☐ Task A\n  ☐ Task B",
+		},
+		{
+			name:  "single completed",
+			todos: []todo{{Content: "Done thing", Status: "completed"}},
+			want:  "📋 *Tasks*\n  ✅ ~Done thing~",
+		},
+		{
+			name:  "unknown status treated as pending",
+			todos: []todo{{Content: "Mystery", Status: "unknown"}},
+			want:  "📋 *Tasks*\n  ☐ Mystery",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &Session{todos: tt.todos}
+			got := s.formatTodos()
+			if got != tt.want {
+				t.Errorf("formatTodos() =\n%s\nwant:\n%s", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUpdateTodosParses(t *testing.T) {
+	// updateTodos with nil thread should parse and store todos without error
+	input, _ := json.Marshal(map[string]any{
+		"todos": []map[string]any{
+			{"content": "Write code", "status": "in_progress"},
+			{"content": "Review", "status": "pending"},
+		},
+	})
+
+	s := &Session{}
+	s.updateTodos(string(input))
+
+	if len(s.todos) != 2 {
+		t.Fatalf("len(todos) = %d, want 2", len(s.todos))
+	}
+	if s.todos[0].Content != "Write code" || s.todos[0].Status != "in_progress" {
+		t.Errorf("todos[0] = %+v", s.todos[0])
+	}
+	if s.todos[1].Content != "Review" || s.todos[1].Status != "pending" {
+		t.Errorf("todos[1] = %+v", s.todos[1])
+	}
+}
+
+func TestUpdateTodosEmptyClearsList(t *testing.T) {
+	s := &Session{
+		todos: []todo{{Content: "Old task", Status: "pending"}},
+	}
+
+	// Empty todos input clears the list
+	s.updateTodos(`{"todos":[]}`)
+	if len(s.todos) != 0 {
+		t.Errorf("todos should be cleared, got %d items", len(s.todos))
+	}
+}
+
+func TestUpdateTodosInvalidJSONClearsList(t *testing.T) {
+	s := &Session{
+		todos: []todo{{Content: "Old task", Status: "pending"}},
+	}
+
+	s.updateTodos("not json")
+	if len(s.todos) != 0 {
+		t.Errorf("invalid JSON should clear todos, got %d items", len(s.todos))
+	}
+}
