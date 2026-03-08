@@ -540,20 +540,12 @@ func toolDetail(toolName, rawInput string) string {
 		}
 		return p
 	case "Bash":
-		cmd := str("command")
-		if len(cmd) > 60 {
-			cmd = cmd[:57] + "..."
-		}
-		return cmd
+		return truncate(str("command"), 60)
 	case "Agent":
 		if d := str("description"); d != "" {
 			return d
 		}
-		p := str("prompt")
-		if len(p) > 60 {
-			p = p[:57] + "..."
-		}
-		return p
+		return truncate(str("prompt"), 60)
 	case "WebFetch":
 		return str("url")
 	case "WebSearch":
@@ -569,11 +561,7 @@ func toolDetail(toolName, rawInput string) string {
 	case "TodoWrite", "TaskCreate", "TaskUpdate":
 		return str("subject")
 	default:
-		s := rawInput
-		if len(s) > 60 {
-			s = s[:57] + "..."
-		}
-		return s
+		return truncate(rawInput, 60)
 	}
 }
 
@@ -591,13 +579,14 @@ func formatTool(toolName, rawInput string) string {
 		return ""
 	}
 
+	// Tool icons — each emoji takes 2 terminal columns, followed by 1 space.
 	switch toolName {
 	case "Read":
 		return fmt.Sprintf("📄 %s", filepath.Base(str("file_path")))
 	case "Write":
-		return fmt.Sprintf("✏️  %s (new)", filepath.Base(str("file_path")))
+		return fmt.Sprintf("📝 %s (new)", filepath.Base(str("file_path")))
 	case "Edit":
-		return fmt.Sprintf("✏️  %s", filepath.Base(str("file_path")))
+		return fmt.Sprintf("📝 %s", filepath.Base(str("file_path")))
 	case "Glob":
 		return fmt.Sprintf("🔍 %s", str("pattern"))
 	case "Grep":
@@ -607,20 +596,12 @@ func formatTool(toolName, rawInput string) string {
 		}
 		return fmt.Sprintf("🔍 %s", p)
 	case "Bash":
-		cmd := str("command")
-		if len(cmd) > 60 {
-			cmd = cmd[:57] + "..."
-		}
-		return fmt.Sprintf("💻 %s", cmd)
+		return fmt.Sprintf("💻 %s", truncate(str("command"), 60))
 	case "Agent":
 		if d := str("description"); d != "" {
 			return fmt.Sprintf("🤖 %s", d)
 		}
-		p := str("prompt")
-		if len(p) > 60 {
-			p = p[:57] + "..."
-		}
-		return fmt.Sprintf("🤖 %s", p)
+		return fmt.Sprintf("🤖 %s", truncate(str("prompt"), 60))
 	case "WebFetch":
 		return fmt.Sprintf("🌐 %s", str("url"))
 	case "WebSearch":
@@ -636,10 +617,14 @@ func formatTool(toolName, rawInput string) string {
 	case "AskUserQuestion":
 		return fmt.Sprintf("❓ %s", str("question"))
 	default:
-		summary := rawInput
-		if len(summary) > 60 {
-			summary = summary[:57] + "..."
-		}
-		return fmt.Sprintf("%s: %s", toolName, summary)
+		return fmt.Sprintf("🔧 %s: %s", toolName, truncate(rawInput, 60))
 	}
+}
+
+// truncate shortens s to max characters with "..." suffix.
+func truncate(s string, max int) string {
+	if len(s) > max {
+		return s[:max-3] + "..."
+	}
+	return s
 }

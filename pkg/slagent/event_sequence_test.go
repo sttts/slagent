@@ -17,10 +17,11 @@ type turnEvent struct {
 }
 
 // formatToolForTerminal mirrors session.go's formatTool for the test harness.
+// Each emoji takes 2 terminal columns + 1 space separator.
 func formatToolForTerminal(name, detail string) string {
 	icons := map[string]string{
 		"Read": "📄", "Glob": "🔍", "Grep": "🔍", "Bash": "💻",
-		"Agent": "🤖", "Edit": "✏️", "Write": "✏️",
+		"Agent": "🤖", "Edit": "📝", "Write": "📝",
 		"WebSearch": "🔎", "WebFetch": "🌐",
 	}
 	icon := icons[name]
