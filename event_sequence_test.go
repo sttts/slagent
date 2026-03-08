@@ -57,7 +57,7 @@ func TestEventSequences(t *testing.T) {
 				{kind: "text", text: "Hello "},
 				{kind: "text", text: "world!"},
 			},
-			wantSlackPrefix: "🤖 Hello",
+			wantSlackPrefix: "🦊 Hello",
 			wantSlack:       "world!",
 			wantTerminal:    []string{"🤖 Claude:", "Hello ", "world!"},
 		},
@@ -121,7 +121,7 @@ func TestEventSequences(t *testing.T) {
 				{kind: "text", text: "What do you mean by Sandbox?"},
 				{kind: "question", text: "<@U123>: "},
 			},
-			wantSlackPrefix: "🤖 <@U123>: ",
+			wantSlackPrefix: "🦊 <@U123>: ",
 			wantSlack:       "Sandbox",
 			wantSlackSuffix: " ❓",
 			wantTerminal:    []string{"What do you mean by Sandbox?"},
@@ -132,7 +132,7 @@ func TestEventSequences(t *testing.T) {
 				{kind: "text", text: "Please tell me more."},
 				{kind: "question", text: "<@U123>: "},
 			},
-			wantSlackPrefix: "🤖 <@U123>: ",
+			wantSlackPrefix: "🦊 <@U123>: ",
 			wantSlackSuffix: " ❓",
 			wantTerminal:    []string{"Please tell me more."},
 		},
@@ -142,7 +142,7 @@ func TestEventSequences(t *testing.T) {
 				{kind: "text", text: "I have a few questions:\n- What is the scope?\n- What is the timeline?"},
 				{kind: "question", text: "<@U123>: "},
 			},
-			wantSlackPrefix: "🤖 <@U123>: ",
+			wantSlackPrefix: "🦊 <@U123>: ",
 			wantSlack:       "scope",
 			wantSlackSuffix: " ❓",
 			wantTerminal:    []string{"scope", "timeline"},
@@ -153,7 +153,7 @@ func TestEventSequences(t *testing.T) {
 				{kind: "text", text: "What do you want?"},
 				{kind: "question", text: ""},
 			},
-			wantSlackPrefix: "🤖 What",
+			wantSlackPrefix: "🦊 What",
 			wantSlackSuffix: " ❓",
 			wantTerminal:    []string{"What do you want?"},
 		},
@@ -166,7 +166,7 @@ func TestEventSequences(t *testing.T) {
 				{kind: "text", text: "Could you clarify the requirements?"},
 				{kind: "question", text: "<@U123>: "},
 			},
-			wantSlackPrefix:   "🤖 <@U123>: ",
+			wantSlackPrefix:   "🦊 <@U123>: ",
 			wantSlackSuffix:   " ❓",
 			wantSlackActivity: "✓ Read",
 			wantTerminal:      []string{"💭 analyzing...", "📄 Read: go.mod", "clarify the requirements"},
@@ -219,7 +219,7 @@ func TestEventSequences(t *testing.T) {
 			mock := newMockSlack()
 			defer mock.close()
 
-			thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+			thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithInstanceID("fox"))
 			thread.Resume("1700000001.000000")
 			turn := thread.NewTurn()
 

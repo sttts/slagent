@@ -40,9 +40,8 @@ func NewWithWriter(w io.Writer) *UI {
 
 // BannerOpts configures the banner display.
 type BannerOpts struct {
-	Topic     string
-	Channel   string
-	ThreadURL string
+	Topic   string
+	Channel string
 	JoinCmd string // command to join this thread with a new slaude instance
 }
 
@@ -55,9 +54,6 @@ func (u *UI) Banner(opts BannerOpts) {
 	fmt.Fprintln(u.w)
 	if opts.Channel != "" {
 		fmt.Fprintf(u.w, "%s  💬 Channel: %s%s\n", dim, opts.Channel, reset)
-	}
-	if opts.ThreadURL != "" {
-		fmt.Fprintf(u.w, "%s  🔗 Thread:  %s%s\n", dim, opts.ThreadURL, reset)
 	}
 	if opts.JoinCmd != "" {
 		fmt.Fprintf(u.w, "%s  🚀 Join:    %s%s\n", dim, opts.JoinCmd, reset)

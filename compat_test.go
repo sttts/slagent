@@ -290,11 +290,11 @@ func TestCompatTextFlushedBeforeThinking(t *testing.T) {
 	turn.Finish()
 }
 
-func TestCompatTextHasInlineRobotPrefix(t *testing.T) {
+func TestCompatTextHasInlineEmojiPrefix(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithInstanceID("dog"))
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -316,9 +316,9 @@ func TestCompatTextHasInlineRobotPrefix(t *testing.T) {
 
 	content := textMsg.blockText()
 
-	// Must start with "🤖 " inline (not on a separate line)
-	if !strings.HasPrefix(content, "🤖 ") {
-		t.Errorf("text message should start with '🤖 ', got: %q", content)
+	// Must start with identity emoji inline (not on a separate line)
+	if !strings.HasPrefix(content, "🐶 ") {
+		t.Errorf("text message should start with '🐶 ' (dog emoji), got: %q", content)
 	}
 
 	// Must contain the text (converted via MarkdownToMrkdwn)
@@ -547,7 +547,7 @@ func TestCompatMarkQuestionReplacesTrailingQuestionMark(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithInstanceID("cat"))
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -578,9 +578,9 @@ func TestCompatMarkQuestionReplacesTrailingQuestionMark(t *testing.T) {
 		t.Errorf("should end with ' ❓', got: %q", content)
 	}
 
-	// Must have @mention inline with 🤖 — prefix prepended at finish
-	if !strings.HasPrefix(content, "🤖 <@U123>: ") {
-		t.Errorf("should start with '🤖 <@U123>: ', got: %q", content)
+	// Must have @mention inline with identity emoji — prefix prepended at finish
+	if !strings.HasPrefix(content, "🐱 <@U123>: ") {
+		t.Errorf("should start with '🐱 <@U123>: ', got: %q", content)
 	}
 }
 

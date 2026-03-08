@@ -9,10 +9,10 @@ package slagent
 
 import (
 	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"time"
 
 	slackapi "github.com/slack-go/slack"
@@ -46,11 +46,65 @@ type threadConfig struct {
 	slackLog          io.Writer  // if non-nil, log all Slack API calls here
 }
 
-// randomInstanceID generates a short random hex string for instance identification.
+// identityEmojis maps Slack short codes to emoji for identity selection.
+// The instance ID IS the short code (e.g. "dog"), making URLs readable:
+// https://team.slack.com/archives/C123/p1234567890#dog
+var identityEmojis = map[string]string{
+	// Animals
+	"dog": "🐶", "cat": "🐱", "mouse": "🐭", "hamster": "🐹",
+	"rabbit": "🐰", "fox": "🦊", "bear": "🐻", "panda": "🐼",
+	"koala": "🐨", "tiger": "🐯", "lion": "🦁", "cow": "🐮",
+	"pig": "🐷", "frog": "🐸", "monkey": "🐵", "chicken": "🐔",
+	"penguin": "🐧", "bird": "🐦", "eagle": "🦅", "duck": "🦆",
+	"owl": "🦉", "bat": "🦇", "wolf": "🐺", "boar": "🐗",
+	"horse": "🐴", "unicorn": "🦄", "bee": "🐝", "bug": "🐛",
+	"butterfly": "🦋", "snail": "🐌", "ladybug": "🐞", "ant": "🐜",
+	"turtle": "🐢", "snake": "🐍", "lizard": "🦎", "t-rex": "🦖",
+	"sauropod": "🦕", "octopus": "🐙", "squid": "🦑", "shrimp": "🦐",
+	"lobster": "🦞", "crab": "🦀", "blowfish": "🐡", "fish": "🐠",
+	"dolphin": "🐬", "whale": "🐳", "shark": "🦈", "crocodile": "🐊",
+	"leopard": "🐆", "zebra": "🦓", "gorilla": "🦍", "elephant": "🐘",
+	"hippo": "🦛", "rhino": "🦏", "camel": "🐫", "giraffe": "🦒",
+	"kangaroo": "🦘", "ox": "🐂", "deer": "🦌", "rooster": "🐓",
+	"turkey": "🦃", "peacock": "🦚", "parrot": "🦜", "swan": "🦢",
+	"flamingo": "🦩", "raccoon": "🦝", "badger": "🦡", "otter": "🦦",
+	"sloth": "🦥", "hedgehog": "🦔", "chipmunk": "🐿",
+	// Neutral person heads
+	"baby": "👶", "boy": "👦", "girl": "👧", "man": "👨",
+	"woman": "👩", "grandpa": "👴", "grandma": "👵", "child": "🧒",
+	"adult": "🧑", "elder": "🧓",
+}
+
+// identityKeys is the sorted list of short codes for random selection.
+var identityKeys []string
+
+func init() {
+	identityKeys = make([]string, 0, len(identityEmojis))
+	for k := range identityEmojis {
+		identityKeys = append(identityKeys, k)
+	}
+	// Sort for deterministic ordering
+	sort.Strings(identityKeys)
+}
+
+// randomInstanceID picks a random emoji short code as instance ID.
 func randomInstanceID() string {
 	b := make([]byte, 4)
 	rand.Read(b)
-	return hex.EncodeToString(b)
+	var n uint32
+	for _, v := range b {
+		n = n*256 + uint32(v)
+	}
+	return identityKeys[n%uint32(len(identityKeys))]
+}
+
+// InstanceEmoji returns the emoji for a given instance ID (short code).
+// Falls back to 🤖 for unknown IDs.
+func InstanceEmoji(instanceID string) string {
+	if e, ok := identityEmojis[instanceID]; ok {
+		return e
+	}
+	return "🤖"
 }
 
 func defaultConfig() threadConfig {

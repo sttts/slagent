@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	slackapi "github.com/slack-go/slack"
+
 	"github.com/sttts/slagent"
 	"github.com/sttts/slagent/cmd/slaude/internal/claude"
 	"github.com/sttts/slagent/cmd/slaude/internal/terminal"
@@ -98,6 +100,26 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 		}
 		client := slagent.NewSlackClient(creds.EffectiveToken(), creds.Cookie)
 
+		// Resolve channel display name if not already set
+		if cfg.ChannelName == "" {
+			if info, err := client.GetConversationInfo(&slackapi.GetConversationInfoInput{
+				ChannelID: cfg.Channel,
+			}); err == nil {
+				if info.IsIM {
+					// DM: resolve the other user's name
+					if u, err := client.GetUserInfo(info.User); err == nil {
+						name := u.Profile.DisplayName
+						if name == "" {
+							name = u.RealName
+						}
+						cfg.ChannelName = "@" + name
+					}
+				} else {
+					cfg.ChannelName = "#" + info.Name
+				}
+			}
+		}
+
 		// Resolve own user ID for @ mentions and thread ownership
 		var opts []slagent.ThreadOption
 		resp, err := client.AuthTest()
@@ -169,9 +191,8 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 		channelDisplay = cfg.Channel
 	}
 	bannerOpts := terminal.BannerOpts{
-		Topic:     cfg.Topic,
-		Channel:   channelDisplay,
-		ThreadURL: threadURL,
+		Topic:   cfg.Topic,
+		Channel: channelDisplay,
 	}
 
 	// Build join command for the banner

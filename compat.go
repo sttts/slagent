@@ -25,6 +25,7 @@ type compatTurn struct {
 	channel  string
 	threadTS string
 	blockID  string    // slagent block_id for message tagging
+	emoji    string    // identity emoji prefix for text messages
 	slackLog io.Writer // optional Slack API logger
 
 	// Unified activity message (thinking + tools + status)
@@ -46,12 +47,13 @@ type compatTurn struct {
 	mu sync.Mutex
 }
 
-func newCompatTurn(api *slackapi.Client, channel, threadTS, blockID string, slackLog io.Writer) *compatTurn {
+func newCompatTurn(api *slackapi.Client, channel, threadTS, blockID, emoji string, slackLog io.Writer) *compatTurn {
 	return &compatTurn{
 		api:       api,
 		channel:   channel,
 		threadTS:  threadTS,
 		blockID:   blockID,
+		emoji:     emoji,
 		slackLog:  slackLog,
 		toolIndex: make(map[string]int),
 	}
@@ -65,11 +67,11 @@ func (c *compatTurn) logSlack(action, content string) {
 	fmt.Fprintf(c.slackLog, "[slack] %s: %s\n", action, content)
 }
 
-// textMsgOpts returns message options for a text message with 🤖 prefix.
+// textMsgOpts returns message options for a text message with emoji prefix.
 // Converts markdown to Slack mrkdwn format. Uses a section block with the given block_id.
 // The block_id should include the appropriate suffix (~, ~act, or none).
-func textMsgOpts(display, blockID string) []slackapi.MsgOption {
-	converted := "🤖 " + MarkdownToMrkdwn(display)
+func textMsgOpts(display, blockID, emoji string) []slackapi.MsgOption {
+	converted := emoji + " " + MarkdownToMrkdwn(display)
 	section := slackapi.NewSectionBlock(
 		slackapi.NewTextBlockObject("mrkdwn", converted, false, false),
 		nil, nil,
@@ -278,9 +280,9 @@ func (c *compatTurn) postText() {
 
 	// While streaming, use ~ suffix so pollers know this message isn't final
 	streamBlockID := c.blockID + "~"
-	opts := textMsgOpts(full, streamBlockID)
+	opts := textMsgOpts(full, streamBlockID, c.emoji)
 
-	converted := "🤖 " + MarkdownToMrkdwn(full)
+	converted := c.emoji + " " + MarkdownToMrkdwn(full)
 	if c.textTS == "" {
 		c.logSlack("postMessage(text)", converted)
 		allOpts := append(opts, slackapi.MsgOptionTS(c.threadTS))
@@ -363,8 +365,8 @@ func (c *compatTurn) finish() error {
 	}
 
 	// Update existing text message with full content — use final block_id (no suffix)
-	opts := textMsgOpts(finalText, c.blockID)
-	finalConverted := "🤖 " + MarkdownToMrkdwn(finalText)
+	opts := textMsgOpts(finalText, c.blockID, c.emoji)
+	finalConverted := c.emoji + " " + MarkdownToMrkdwn(finalText)
 	if c.textTS != "" {
 		c.logSlack("updateMessage(text/final)", finalConverted)
 		c.api.UpdateMessage(c.channel, c.textTS, opts...)

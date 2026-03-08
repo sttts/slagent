@@ -88,6 +88,11 @@ func (t *Thread) InstanceID() string {
 	return t.instanceID
 }
 
+// Emoji returns the identity emoji for this thread instance.
+func (t *Thread) Emoji() string {
+	return t.emoji
+}
+
 // logSlack writes a Slack API action to the Thread's log writer if configured.
 func (t *Thread) logSlack(action, content string) {
 	if t.config.slackLog == nil {
@@ -104,6 +109,7 @@ type Thread struct {
 	threadTS   string
 	instanceID string // unique per slaude instance, used in block_id
 	blockID    string // "slagent-{instanceID}", cached
+	emoji      string // identity emoji derived from instanceID
 	config     threadConfig
 
 	// Permissions
@@ -139,6 +145,7 @@ func NewThread(client *slackapi.Client, token, channel string, opts ...ThreadOpt
 		channel:    channel,
 		instanceID: instanceID,
 		blockID:    slagentBlockPrefix + instanceID,
+		emoji:      InstanceEmoji(instanceID),
 		config:     cfg,
 		ownerID:    cfg.ownerID,
 		openAccess: cfg.openAccess,
@@ -198,7 +205,7 @@ func (t *Thread) NewTurn() Turn {
 	if isNativeToken(t.token) {
 		w = newNativeTurn(t.token, t.config.apiURL, t.channel, threadTS, t.config.markdownConverter, t.config.bufferSize)
 	} else {
-		w = newCompatTurn(t.api, t.channel, threadTS, t.blockID, t.config.slackLog)
+		w = newCompatTurn(t.api, t.channel, threadTS, t.blockID, t.emoji, t.config.slackLog)
 	}
 	return &turnImpl{w: w}
 }
