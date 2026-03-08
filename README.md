@@ -5,7 +5,7 @@
 # slagent
 
 > [!CAUTION]
-> **Experimental** — exposes your Claude Code session to Slack. Likely insecure. Use at your own risk.
+> **Experimental** — slaude exposes your Claude Code session to Slack. Likely insecure. Use at your own risk.
 
 **slagent** is a Go library for streaming agent sessions to Slack threads. **slaude** is a CLI built on slagent that mirrors [Claude Code](https://docs.anthropic.com/en/docs/claude-code) sessions to Slack — so your team can watch, comment, and steer from Slack while Claude works.
 
