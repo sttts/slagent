@@ -118,8 +118,8 @@ func TestCompatTurnToolIcons(t *testing.T) {
 	display := w.renderActivity()
 	w.mu.Unlock()
 
-	if !strings.Contains(display, "📄") {
-		t.Error("Read tool should use 📄 icon")
+	if !strings.Contains(display, ":claude:") {
+		t.Error("running tool should use :claude: icon")
 	}
 }
 
@@ -379,11 +379,10 @@ func TestCompatToolSingleIcon(t *testing.T) {
 	display := w.renderActivity()
 	w.mu.Unlock()
 
-	if !strings.Contains(display, "📄 Read: main.go") {
-		t.Errorf("running tool should show tool icon, got: %q", display)
+	if !strings.Contains(display, ":claude: Read: main.go") {
+		t.Errorf("running tool should show :claude:, got: %q", display)
 	}
-	// Should NOT have double icons
-	if strings.Contains(display, "✅") || strings.Contains(display, "⏳") {
+	if strings.Contains(display, "✓") || strings.Contains(display, "⏳") {
 		t.Error("running tool should not have status marker")
 	}
 }
@@ -414,11 +413,11 @@ func TestCompatToolDoneUpdatesInPlace(t *testing.T) {
 	}
 
 	// Done tool should show ✅, not tool icon
-	if !strings.Contains(display, "✅ Read: main.go") {
+	if !strings.Contains(display, "✓ Read: main.go") {
 		t.Errorf("done tool should show ✅, got: %q", display)
 	}
-	if strings.Contains(display, "📄") {
-		t.Error("done tool should not show tool icon")
+	if strings.Contains(display, ":claude:") {
+		t.Error("done tool should not show :claude:")
 	}
 }
 
@@ -449,10 +448,10 @@ func TestCompatToolSequenceNoDoubleIcons(t *testing.T) {
 		t.Errorf("expected 2 activity lines, got %d", lineCount)
 	}
 
-	// Each line should have exactly one icon
+	// Each line should have exactly one icon (✅ or :claude: or ❌)
 	for _, line := range strings.Split(display, "\n") {
-		iconCount := strings.Count(line, "✅") + strings.Count(line, "📄") +
-			strings.Count(line, "🔍") + strings.Count(line, "❌")
+		iconCount := strings.Count(line, "✓") + strings.Count(line, ":claude:") +
+			strings.Count(line, "❌")
 		if iconCount != 1 {
 			t.Errorf("line should have exactly 1 icon, got %d: %q", iconCount, line)
 		}

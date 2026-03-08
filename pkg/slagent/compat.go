@@ -68,7 +68,7 @@ func (c *compatTurn) renderActivity() string {
 
 	// Thinking lines
 	if c.thinkBuf.Len() > 0 {
-		lines = append(lines, "💭 _thinking..._")
+		lines = append(lines, ":claude: _thinking..._")
 		thinkText := c.thinkBuf.String()
 		if len(thinkText) > 500 {
 			thinkText = "…" + thinkText[len(thinkText)-499:]
@@ -188,30 +188,15 @@ func (c *compatTurn) writeTool(id, name, status, detail string) {
 		summary += ": " + detail
 	}
 
-	// Single icon: status for done/error, tool icon for running
+	// :claude: while running, ✅ when done, ❌ on error
 	var icon string
 	switch status {
 	case ToolDone:
-		icon = "✅"
+		icon = "✓"
 	case ToolError:
 		icon = "❌"
 	default:
-		switch name {
-		case "Read":
-			icon = "📄"
-		case "Glob", "Grep":
-			icon = "🔍"
-		case "Bash":
-			icon = "💻"
-		case "Agent":
-			icon = "🤖"
-		case "Edit", "Write":
-			icon = "✏️"
-		case "WebSearch", "WebFetch":
-			icon = "🌐"
-		default:
-			icon = "🔧"
-		}
+		icon = ":claude:"
 	}
 
 	line := fmt.Sprintf("%s %s", icon, summary)

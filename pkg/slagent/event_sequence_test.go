@@ -75,7 +75,7 @@ func TestEventSequences(t *testing.T) {
 				{kind: "text", text: "Here is my analysis."},
 			},
 			wantSlack:         "analysis",
-			wantSlackActivity: "💭",
+			wantSlackActivity: ":claude:",
 			wantTerminal:      []string{"💭 Let me analyze...", "Here is my analysis."},
 		},
 		{
@@ -86,7 +86,7 @@ func TestEventSequences(t *testing.T) {
 				{kind: "text", text: "I read the file."},
 			},
 			wantSlack:         "I read the file",
-			wantSlackActivity: "✅ Read: main.go",
+			wantSlackActivity: "✓ Read: main.go",
 			wantTerminal:      []string{"📄 Read: main.go", "I read the file"},
 		},
 		{
@@ -99,7 +99,7 @@ func TestEventSequences(t *testing.T) {
 				{kind: "text", text: "Found the code."},
 			},
 			wantSlack:         "Found the code",
-			wantSlackActivity: "✅ Grep: pattern",
+			wantSlackActivity: "✓ Grep: pattern",
 			wantTerminal:      []string{"📄 Read: a.go", "🔍 Grep: pattern", "Found the code"},
 		},
 		{
@@ -111,7 +111,7 @@ func TestEventSequences(t *testing.T) {
 				{kind: "text", text: "Done."},
 			},
 			wantSlack:         "Done",
-			wantSlackActivity: "✅ Read",
+			wantSlackActivity: "✓ Read",
 			wantTerminal:      []string{"Let me check.", "📄 Read: main.go", "Done."},
 		},
 		{
@@ -167,7 +167,7 @@ func TestEventSequences(t *testing.T) {
 			},
 			wantSlackPrefix:   "🤖 <@U123>: ",
 			wantSlackSuffix:   " ❓",
-			wantSlackActivity: "✅ Read",
+			wantSlackActivity: "✓ Read",
 			wantTerminal:      []string{"💭 analyzing...", "📄 Read: go.mod", "clarify the requirements"},
 		},
 		{
@@ -176,7 +176,7 @@ func TestEventSequences(t *testing.T) {
 				{kind: "thinking", text: "pondering..."},
 			},
 			wantSlackNoText:   true,
-			wantSlackActivity: "💭",
+			wantSlackActivity: ":claude:",
 			wantTerminal:      []string{"💭 pondering..."},
 		},
 		{
