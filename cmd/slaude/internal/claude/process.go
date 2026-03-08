@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -62,7 +63,11 @@ func Start(ctx context.Context, opts ...Option) (*Process, error) {
 
 	cmd := exec.CommandContext(ctx, "claude", args...)
 	cmd.Env = env
-	cmd.Stderr = os.Stderr
+	if cfg.stderr != nil {
+		cmd.Stderr = cfg.stderr
+	} else {
+		cmd.Stderr = os.Stderr
+	}
 
 	stdinPipe, err := cmd.StdinPipe()
 	if err != nil {
@@ -146,9 +151,15 @@ type Option func(*config)
 
 type config struct {
 	extraArgs []string
+	stderr    io.Writer
 }
 
 // WithExtraArgs appends extra arguments to the Claude command line.
 func WithExtraArgs(args []string) Option {
 	return func(c *config) { c.extraArgs = args }
+}
+
+// WithStderr sets the stderr writer for the Claude subprocess.
+func WithStderr(w io.Writer) Option {
+	return func(c *config) { c.stderr = w }
 }

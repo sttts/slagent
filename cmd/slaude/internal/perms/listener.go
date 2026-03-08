@@ -45,8 +45,9 @@ func (l *Listener) SocketPath() string {
 	return l.socketPath
 }
 
-// MCPConfig returns the JSON MCP config for Claude's --mcp-config flag.
-func (l *Listener) MCPConfig(slaudeBinary string) string {
+// MCPConfigFile writes the MCP config to a temp file and returns the path.
+// The caller should defer os.Remove on the returned path.
+func (l *Listener) MCPConfigFile(slaudeBinary string) (string, error) {
 	cfg := map[string]interface{}{
 		"mcpServers": map[string]interface{}{
 			MCPServerName: map[string]interface{}{
@@ -57,7 +58,18 @@ func (l *Listener) MCPConfig(slaudeBinary string) string {
 		},
 	}
 	out, _ := json.Marshal(cfg)
-	return string(out)
+
+	f, err := os.CreateTemp("", "slaude-mcp-*.json")
+	if err != nil {
+		return "", fmt.Errorf("create mcp config: %w", err)
+	}
+	if _, err := f.Write(out); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return "", fmt.Errorf("write mcp config: %w", err)
+	}
+	f.Close()
+	return f.Name(), nil
 }
 
 // PermissionToolRef returns the --permission-prompt-tool value.

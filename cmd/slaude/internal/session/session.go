@@ -208,15 +208,41 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 		permListener.Start()
 		defer permListener.Stop()
 
-		// Tell Claude to use our MCP permission server
+		// Write MCP config to temp file for Claude's --mcp-config flag
+		mcpCfgFile, err := permListener.MCPConfigFile(slaudeBin)
+		if err != nil {
+			return nil, fmt.Errorf("write mcp config: %w", err)
+		}
+		defer os.Remove(mcpCfgFile)
+
+		if cfg.Debug {
+			mcpCfgContent, _ := os.ReadFile(mcpCfgFile)
+			ui.Info(fmt.Sprintf("📝 MCP config: %s → %s", mcpCfgFile, string(mcpCfgContent)))
+			ui.Info(fmt.Sprintf("📝 Permission tool: %s", perms.PermissionToolRef()))
+		}
+
 		extraArgs = append(extraArgs,
-			"--mcp-config", permListener.MCPConfig(slaudeBin),
+			"--mcp-config", mcpCfgFile,
 			"--permission-prompt-tool", perms.PermissionToolRef(),
 		)
 	}
 
 	// Start Claude with pass-through args
-	proc, err := claude.Start(ctx, claude.WithExtraArgs(extraArgs))
+	var claudeOpts []claude.Option
+	claudeOpts = append(claudeOpts, claude.WithExtraArgs(extraArgs))
+
+	// In debug mode, tee Claude's stderr to claude-stderr.log
+	if cfg.Debug {
+		stderrLog, err := os.Create("claude-stderr.log")
+		if err != nil {
+			return nil, fmt.Errorf("create claude-stderr.log: %w", err)
+		}
+		defer stderrLog.Close()
+		claudeOpts = append(claudeOpts, claude.WithStderr(io.MultiWriter(os.Stderr, stderrLog)))
+		ui.Info("📝 Claude stderr: claude-stderr.log")
+	}
+
+	proc, err := claude.Start(ctx, claudeOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("start claude: %w", err)
 	}
