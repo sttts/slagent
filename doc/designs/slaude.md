@@ -37,17 +37,18 @@ cmd/slaude/internal/
 slaude separates its own flags from Claude flags using `--`:
 
 ```bash
-slaude -c CHANNEL -- --permission-mode plan --resume SESSION_ID "topic"
+slaude start -c CHANNEL -- --permission-mode plan "topic"
+slaude join https://team.slack.com/archives/C123/p1234567890123456 "topic"
+slaude resume https://team.slack.com/archives/C123/p1234567890123456#abc123 -- --resume SESSION_ID
 ```
 
 ### slaude flags
 
 | Flag | Description |
 |------|-------------|
-| `-c, --channel` | Slack channel name or ID |
-| `-u, --user` | Slack user(s) for DM |
+| `-c, --channel` | Slack channel name or ID (start only) |
+| `-u, --user` | Slack user(s) for DM (start only) |
 | `-w, --workspace` | Slack workspace URL (uses default if omitted) |
-| `--resume-thread` | Slack thread URL or TS to resume |
 | `--debug` | Write debug logs |
 | `[topic...]` | Positional topic arg |
 

@@ -18,7 +18,9 @@ import (
 
 var cli struct {
 	Workspace string      `short:"w" help:"Slack workspace URL (e.g. myteam.slack.com). Uses default if omitted." placeholder:"WORKSPACE"`
-	Start     StartCmd    `cmd:"" help:"Start a planning session mirrored to Slack."`
+	Start     StartCmd    `cmd:"" help:"Start a new Slack thread with a Claude session."`
+	Join      JoinCmd     `cmd:"" help:"Join an existing Slack thread with a new slaude instance."`
+	Resume    ResumeCmd   `cmd:"" help:"Resume an existing session in a Slack thread."`
 	Auth      AuthCmd     `cmd:"" help:"Set up Slack credentials."`
 	Default   DefaultCmd  `cmd:"" help:"Set the default workspace."`
 	Channels  ChannelsCmd `cmd:"" help:"List Slack channels and group DMs."`
@@ -26,78 +28,71 @@ var cli struct {
 	Status    StatusCmd   `cmd:"" help:"Show current configuration."`
 }
 
-// StartCmd starts an interactive planning session with Claude Code.
+// StartCmd starts a new interactive session with Claude Code.
 type StartCmd struct {
-	Channel      string   `short:"c" help:"Slack channel name or ID." placeholder:"CHANNEL"`
-	User         []string `short:"u" help:"Slack user(s) for DM. Use multiple -u for group DM." placeholder:"USER"`
-	Topic        []string `arg:"" optional:"" help:"Planning topic."`
-	ResumeThread string   `help:"Slack thread URL or timestamp to resume." placeholder:"URL"`
-	Debug        bool     `help:"Print raw JSON events from Claude to terminal."`
-	ClaudeArgs   []string `name:"-" hidden:""`
+	Channel    string   `short:"c" help:"Slack channel name or ID." placeholder:"CHANNEL"`
+	User       []string `short:"u" help:"Slack user(s) for DM. Use multiple -u for group DM." placeholder:"USER"`
+	Topic      []string `arg:"" optional:"" help:"Planning topic."`
+	Debug      bool     `help:"Print raw JSON events from Claude to terminal."`
+	ClaudeArgs []string `name:"-" hidden:""`
 }
 
-// parseResumeThread parses a resume-thread value which can be:
-//   - a Slack permalink: https://workspace.slack.com/archives/CHANNEL/pTIMESTAMP
-//   - a Slack permalink with instance ID: https://...pTIMESTAMP#instanceID
-//   - a bare "threadTS-instanceID"
-//   - a bare "threadTS"
-//
-// Returns (channel, threadTS, instanceID). Channel is empty for bare values.
-func parseResumeThread(value string) (channel, threadTS, instanceID string) {
-	// Slack permalink: https://...slack.com/archives/CHANNEL/pTIMESTAMP[#instanceID]
-	if strings.Contains(value, "slack.com/archives/") {
-		// Extract instance ID from URL fragment (#instanceID)
-		if idx := strings.LastIndex(value, "#"); idx >= 0 {
-			instanceID = value[idx+1:]
-			value = value[:idx]
-		}
+// JoinCmd joins an existing Slack thread with a new slaude instance.
+type JoinCmd struct {
+	URL        string   `arg:"" help:"Slack thread URL to join."`
+	Topic      []string `arg:"" optional:"" help:"Planning topic."`
+	Debug      bool     `help:"Print raw JSON events from Claude to terminal."`
+	ClaudeArgs []string `name:"-" hidden:""`
+}
 
-		parts := strings.Split(value, "/")
-		// Find "archives" and take the next two segments
-		for i, p := range parts {
-			if p == "archives" && i+2 < len(parts) {
-				channel = parts[i+1]
-				tsRaw := parts[i+2]
+// ResumeCmd resumes an existing session in a Slack thread.
+type ResumeCmd struct {
+	URL        string   `arg:"" help:"Slack thread URL with #instanceID fragment."`
+	Debug      bool     `help:"Print raw JSON events from Claude to terminal."`
+	ClaudeArgs []string `name:"-" hidden:""`
+}
 
-				// Strip query string
-				if idx := strings.Index(tsRaw, "?"); idx >= 0 {
-					tsRaw = tsRaw[:idx]
-				}
+// parseThreadURL parses a Slack permalink URL into channel and thread timestamp.
+// Format: https://workspace.slack.com/archives/CHANNEL/pTIMESTAMP[#instanceID]
+// Returns (channel, threadTS, instanceID).
+func parseThreadURL(value string) (ch, threadTS, instanceID string) {
+	// Extract instance ID from URL fragment (#instanceID)
+	if idx := strings.LastIndex(value, "#"); idx >= 0 {
+		instanceID = value[idx+1:]
+		value = value[:idx]
+	}
 
-				// Convert pTIMESTAMP → TIMESTAMP.MICROSECONDS
-				tsRaw = strings.TrimPrefix(tsRaw, "p")
-				if len(tsRaw) > 6 {
-					threadTS = tsRaw[:len(tsRaw)-6] + "." + tsRaw[len(tsRaw)-6:]
-				} else {
-					threadTS = tsRaw
-				}
-				return
+	parts := strings.Split(value, "/")
+	for i, p := range parts {
+		if p == "archives" && i+2 < len(parts) {
+			ch = parts[i+1]
+			tsRaw := parts[i+2]
+
+			// Strip query string
+			if idx := strings.Index(tsRaw, "?"); idx >= 0 {
+				tsRaw = tsRaw[:idx]
 			}
+
+			// Convert pTIMESTAMP → TIMESTAMP.MICROSECONDS
+			tsRaw = strings.TrimPrefix(tsRaw, "p")
+			if len(tsRaw) > 6 {
+				threadTS = tsRaw[:len(tsRaw)-6] + "." + tsRaw[len(tsRaw)-6:]
+			} else {
+				threadTS = tsRaw
+			}
+			return
 		}
 	}
-
-	// Bare value: threadTS[-instanceID]
-	if idx := strings.LastIndex(value, "-"); idx > 0 {
-		return "", value[:idx], value[idx+1:]
-	}
-	return "", value, ""
+	return "", "", instanceID
 }
 
 func (cmd *StartCmd) Run() error {
-	urlChannel, threadTS, instanceID := parseResumeThread(cmd.ResumeThread)
 	cfg := session.Config{
-		Topic:          strings.Join(cmd.Topic, " "),
-		Channel:        cmd.Channel,
-		ResumeThreadTS: threadTS,
-		InstanceID:     instanceID,
-		Debug:          cmd.Debug,
-		Workspace:      cli.Workspace,
-		ClaudeArgs:     cmd.ClaudeArgs,
-	}
-
-	// Channel from URL overrides -c flag (unless already set)
-	if urlChannel != "" && cfg.Channel == "" {
-		cfg.Channel = urlChannel
+		Topic:      strings.Join(cmd.Topic, " "),
+		Channel:    cmd.Channel,
+		Debug:      cmd.Debug,
+		Workspace:  cli.Workspace,
+		ClaudeArgs: cmd.ClaudeArgs,
 	}
 
 	// Resolve --channel name or --user(s) to a channel ID
@@ -113,7 +108,6 @@ func (cmd *StartCmd) Run() error {
 			}
 			cfg.Channel = chID
 
-			// Build display name
 			var names []string
 			for _, u := range cmd.User {
 				names = append(names, "@"+strings.TrimPrefix(u, "@"))
@@ -137,23 +131,59 @@ func (cmd *StartCmd) Run() error {
 		}
 	}
 
-	// Detect resume from pass-through args
-	isResume := false
-	for _, a := range cfg.ClaudeArgs {
-		if a == "--resume" || strings.HasPrefix(a, "--resume=") {
-			isResume = true
-			break
-		}
-	}
-
-	// If no topic given (and not resuming), prompt for one
-	if cfg.Topic == "" && !isResume {
+	// If no topic given, prompt for one
+	if cfg.Topic == "" {
 		fmt.Print("📝 Topic: ")
 		reader := bufio.NewReader(os.Stdin)
 		line, _ := reader.ReadString('\n')
 		cfg.Topic = strings.TrimSpace(line)
 	}
 
+	return runSession(cfg)
+}
+
+func (cmd *JoinCmd) Run() error {
+	ch, threadTS, _ := parseThreadURL(cmd.URL)
+	if ch == "" || threadTS == "" {
+		return fmt.Errorf("invalid thread URL: %s", cmd.URL)
+	}
+
+	cfg := session.Config{
+		Topic:          strings.Join(cmd.Topic, " "),
+		Channel:        ch,
+		ResumeThreadTS: threadTS,
+		Debug:          cmd.Debug,
+		Workspace:      cli.Workspace,
+		ClaudeArgs:     cmd.ClaudeArgs,
+	}
+	// InstanceID left empty → new instance generated
+
+	return runSession(cfg)
+}
+
+func (cmd *ResumeCmd) Run() error {
+	ch, threadTS, instanceID := parseThreadURL(cmd.URL)
+	if ch == "" || threadTS == "" {
+		return fmt.Errorf("invalid thread URL: %s", cmd.URL)
+	}
+	if instanceID == "" {
+		return fmt.Errorf("missing instance ID in URL (expected URL#instanceID)")
+	}
+
+	cfg := session.Config{
+		Channel:        ch,
+		ResumeThreadTS: threadTS,
+		InstanceID:     instanceID,
+		Debug:          cmd.Debug,
+		Workspace:      cli.Workspace,
+		ClaudeArgs:     cmd.ClaudeArgs,
+	}
+
+	return runSession(cfg)
+}
+
+// runSession runs a session with the given config and prints resume info on exit.
+func runSession(cfg session.Config) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
@@ -169,15 +199,7 @@ func (cmd *StartCmd) Run() error {
 		if resume.ThreadURL != "" && resume.InstanceID != "" {
 			fmt.Printf("  slaude resume %s#%s -- --resume %s\n", resume.ThreadURL, resume.InstanceID, resume.SessionID)
 		} else {
-			args := "slaude resume"
-			if resume.Channel != "" {
-				args += fmt.Sprintf(" -c %s", resume.Channel)
-			}
-			if resume.ThreadTS != "" {
-				args += fmt.Sprintf(" --resume-thread %s", resume.ThreadTS)
-			}
-			args += fmt.Sprintf(" -- --resume %s", resume.SessionID)
-			fmt.Printf("  %s\n", args)
+			fmt.Printf("  slaude resume (thread URL unavailable) -- --resume %s\n", resume.SessionID)
 		}
 		fmt.Println()
 		fmt.Println("🤖 To resume in Claude Code directly:")
@@ -347,9 +369,14 @@ func main() {
 		kong.Vars{"args": strings.Join(kongArgs, " ")},
 	)
 
-	// Inject pass-through args into StartCmd
-	if start, ok := ctx.Selected().Target.Addr().Interface().(*StartCmd); ok {
-		start.ClaudeArgs = passthrough
+	// Inject pass-through args into session commands
+	switch cmd := ctx.Selected().Target.Addr().Interface().(type) {
+	case *StartCmd:
+		cmd.ClaudeArgs = passthrough
+	case *JoinCmd:
+		cmd.ClaudeArgs = passthrough
+	case *ResumeCmd:
+		cmd.ClaudeArgs = passthrough
 	}
 
 	if err := ctx.Run(); err != nil {

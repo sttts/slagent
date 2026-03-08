@@ -48,33 +48,29 @@ slaude auth --manual     # paste a token manually
 ### Usage
 
 ```bash
-# Start a session mirrored to Slack
-slaude -c CHANNEL -- --permission-mode plan "design the API"
+# Start a new thread mirrored to Slack
+slaude start -c CHANNEL -- --permission-mode plan "design the API"
 
-# Resume an existing Claude session
-slaude -c CHANNEL --resume-thread 1234567890.123456 -- --resume SESSION_ID
+# Join an existing Slack thread (new slaude instance)
+slaude join https://team.slack.com/archives/C123/p1234567890 "topic"
+
+# Resume a previous session (same instance ID)
+slaude resume https://team.slack.com/archives/C123/p1234567890#abc123 -- --resume SESSION_ID
 
 # DM a user
-slaude -u alice -- "review this PR"
+slaude start -u alice -- "review this PR"
 
 # Local only (no Slack)
-slaude -- "quick question"
+slaude start -- "quick question"
 ```
 
 Everything after `--` is passed through to the Claude subprocess. This means slaude doesn't need to know about every Claude flag — you control `--permission-mode`, `--resume`, `--system-prompt`, etc. directly.
 
-### slaude flags
+### Commands
 
-| Flag | Description |
-|------|-------------|
-| `-c, --channel` | Slack channel name or ID |
-| `-u, --user` | Slack user(s) for DM |
-| `--resume-thread` | Slack thread TS to resume |
-| `--debug` | Write debug logs |
-| `[topic...]` | Positional topic arg |
-
-### Subcommands
-
+- `slaude start` — start a new Slack thread with a Claude session
+- `slaude join URL` — join an existing thread with a new slaude instance
+- `slaude resume URL#id` — resume an existing session in a Slack thread
 - `slaude auth` — set up Slack credentials
 - `slaude channels` — list accessible channels
 - `slaude share FILE -c CHANNEL` — post a plan file to Slack
