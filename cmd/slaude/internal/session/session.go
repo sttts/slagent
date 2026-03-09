@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"bufio"
 	"os"
 	"os/exec"
 	"os/user"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -77,7 +79,7 @@ type Session struct {
 	todosTS string // Slack message timestamp for the tasks message
 
 	// Known-safe network destinations (for auto-approve with "known" level)
-	knownHosts map[string]bool
+	knownHosts *knownHostSet
 }
 
 // todo is a single item from Claude's TodoWrite tool.
@@ -112,19 +114,7 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 		cancel:      cancel,
 		replyNotify: make(chan struct{}, 1),
 		stopNotify:  make(chan struct{}, 1),
-		knownHosts: map[string]bool{
-			"proxy.golang.org":   true,
-			"sum.golang.org":     true,
-			"registry.npmjs.org": true,
-			"github.com":         true,
-			"api.github.com":     true,
-			"raw.githubusercontent.com": true,
-			"pypi.org":           true,
-			"files.pythonhosted.org": true,
-			"rubygems.org":       true,
-			"crates.io":          true,
-			"static.crates.io":   true,
-		},
+		knownHosts:  loadKnownHosts(),
 	}
 
 	// Open debug log
@@ -674,6 +664,126 @@ func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 	}
 }
 
+// knownHostSet holds exact hosts and glob patterns for known-safe network destinations.
+type knownHostSet struct {
+	exact    map[string]bool
+	patterns []string // glob patterns (e.g. "*.googleapis.com")
+}
+
+// match returns true if host is in the known set (exact or glob match).
+func (k *knownHostSet) match(host string) bool {
+	if k.exact[host] {
+		return true
+	}
+	for _, p := range k.patterns {
+		if matched, _ := path.Match(p, host); matched {
+			return true
+		}
+	}
+	return false
+}
+
+// add adds an exact host to the set.
+func (k *knownHostSet) add(host string) {
+	k.exact[host] = true
+}
+
+// defaultKnownHosts are used when no known-hosts.yaml exists.
+var defaultKnownHosts = []string{
+	"github.com",
+	"api.github.com",
+	"raw.githubusercontent.com",
+	"proxy.golang.org",
+	"sum.golang.org",
+	"registry.npmjs.org",
+	"pypi.org",
+	"files.pythonhosted.org",
+	"rubygems.org",
+	"crates.io",
+	"static.crates.io",
+}
+
+// knownHostsPaths returns candidate paths for known-hosts.yaml.
+func knownHostsPaths() []string {
+	var paths []string
+	if home, err := os.UserHomeDir(); err == nil {
+		paths = append(paths, filepath.Join(home, ".config", "slagent", "known-hosts.yaml"))
+	}
+	return paths
+}
+
+// loadKnownHosts loads the known host set from ~/.config/slagent/known-hosts.yaml,
+// falling back to built-in defaults if the file doesn't exist.
+//
+// File format (YAML list with host key):
+//
+//	- host: github.com
+//	- host: api.github.com
+//	- host: "*.googleapis.com"
+func loadKnownHosts() *knownHostSet {
+	set := &knownHostSet{exact: make(map[string]bool)}
+
+	for _, p := range knownHostsPaths() {
+		if entries, err := parseKnownHostsFile(p); err == nil {
+			for _, e := range entries {
+				if strings.ContainsAny(e, "*?[") {
+					set.patterns = append(set.patterns, e)
+				} else {
+					set.exact[e] = true
+				}
+			}
+			return set
+		}
+	}
+
+	// No file found — use defaults
+	for _, h := range defaultKnownHosts {
+		set.exact[h] = true
+	}
+	return set
+}
+
+// parseKnownHostsFile reads a known-hosts.yaml file.
+// Format: YAML list with "- host: value" entries. Ignores comments (#).
+func parseKnownHostsFile(filePath string) ([]string, error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var hosts []string
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		// Skip empty lines and comments
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Strip YAML list prefix
+		line = strings.TrimPrefix(line, "- ")
+		line = strings.TrimSpace(line)
+
+		// Expect "host: value"
+		if !strings.HasPrefix(line, "host:") {
+			continue
+		}
+		value := strings.TrimSpace(strings.TrimPrefix(line, "host:"))
+
+		// Strip quotes
+		if len(value) >= 2 && (value[0] == '"' || value[0] == '\'') && value[len(value)-1] == value[0] {
+			value = value[1 : len(value)-1]
+		}
+
+		if value != "" {
+			hosts = append(hosts, value)
+		}
+	}
+	return hosts, scanner.Err()
+}
+
 // autoApproveSummary returns a human-readable summary of the auto-approve policy.
 // Returns "" when both are "never" (all permissions go to Slack).
 func autoApproveSummary(level, network string) string {
@@ -885,7 +995,7 @@ func (s *Session) handlePermission(req *perms.PermissionRequest) *perms.Permissi
 		case "any":
 			networkOK = true
 		case "known":
-			networkOK = s.knownHosts[cls.NetworkDst]
+			networkOK = s.knownHosts.match(cls.NetworkDst)
 		default:
 			networkOK = false
 		}
@@ -896,7 +1006,7 @@ func (s *Session) handlePermission(req *perms.PermissionRequest) *perms.Permissi
 		var reason string
 		if cls.Network {
 			knownTag := "unknown"
-			if s.knownHosts[cls.NetworkDst] {
+			if s.knownHosts.match(cls.NetworkDst) {
 				knownTag = "known"
 			}
 			reason = fmt.Sprintf("%s+%s", cls.Level, knownTag)
@@ -956,7 +1066,7 @@ func (s *Session) handlePermission(req *perms.PermissionRequest) *perms.Permissi
 		case "floppy_disk":
 			// Approve and remember host for this session
 			if cls.Network && cls.NetworkDst != "" && cls.NetworkDst != "unknown" {
-				s.knownHosts[cls.NetworkDst] = true
+				s.knownHosts.add(cls.NetworkDst)
 				s.ui.Info(fmt.Sprintf("  💾 Remembered %s as known host", cls.NetworkDst))
 			}
 			s.thread.DeleteMessage(msgTS)

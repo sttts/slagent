@@ -2,6 +2,7 @@ package session
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 )
@@ -305,6 +306,87 @@ func TestLevelAllowed(t *testing.T) {
 				t.Errorf("levelAllowed(%q, %q) = %v, want %v", tt.level, tt.threshold, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestParseKnownHostsFile(t *testing.T) {
+	content := `# Package managers
+- host: github.com
+- host: api.github.com
+- host: "*.googleapis.com"
+- host: '*.cdn.example.com'
+
+# Comment
+- host: pypi.org
+- invalid line
+- host:
+`
+	tmp := t.TempDir()
+	path := tmp + "/known-hosts.yaml"
+	os.WriteFile(path, []byte(content), 0644)
+
+	hosts, err := parseKnownHostsFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []string{"github.com", "api.github.com", "*.googleapis.com", "*.cdn.example.com", "pypi.org"}
+	if len(hosts) != len(want) {
+		t.Fatalf("got %d hosts, want %d: %v", len(hosts), len(want), hosts)
+	}
+	for i, h := range hosts {
+		if h != want[i] {
+			t.Errorf("hosts[%d] = %q, want %q", i, h, want[i])
+		}
+	}
+}
+
+func TestKnownHostSetMatch(t *testing.T) {
+	set := &knownHostSet{exact: map[string]bool{
+		"github.com":     true,
+		"api.github.com": true,
+	}, patterns: []string{"*.googleapis.com"}}
+
+	tests := []struct {
+		host string
+		want bool
+	}{
+		{"github.com", true},
+		{"api.github.com", true},
+		{"evil.github.com", false},
+		{"storage.googleapis.com", true},
+		{"googleapis.com", false},
+		{"evil.com", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.host, func(t *testing.T) {
+			if got := set.match(tt.host); got != tt.want {
+				t.Errorf("match(%q) = %v, want %v", tt.host, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestKnownHostSetAdd(t *testing.T) {
+	set := &knownHostSet{exact: make(map[string]bool)}
+	set.add("new.example.com")
+	if !set.match("new.example.com") {
+		t.Error("added host should match")
+	}
+}
+
+func TestLoadKnownHostsDefaults(t *testing.T) {
+	// When no file exists, loadKnownHosts returns built-in defaults
+	set := loadKnownHosts()
+	if !set.match("github.com") {
+		t.Error("defaults should include github.com")
+	}
+	if !set.match("proxy.golang.org") {
+		t.Error("defaults should include proxy.golang.org")
+	}
+	if set.match("evil.com") {
+		t.Error("defaults should not include evil.com")
 	}
 }
 

