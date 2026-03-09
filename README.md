@@ -44,8 +44,8 @@ slaude start -c CHANNEL -- --permission-mode plan "refactor the auth module"
 # Join an existing Slack thread (new agent instance)
 slaude join https://team.slack.com/archives/C123/p1234567890 "help with tests"
 
-# Resume a previous session (same agent instance)
-slaude resume https://team.slack.com/archives/C123/p1234567890#fox -- --resume SESSION_ID
+# Resume a previous session (URL with cursor from exit output)
+slaude resume https://team.slack.com/archives/C123/p1234567890#fox@1700000005.000000 -- --resume SESSION_ID
 
 # DM a user
 slaude start -u alice -- "review this PR"
@@ -60,7 +60,7 @@ slaude start -- "refactor the auth module"
 |---------|-------------|
 | `slaude start -c CHANNEL` | Start a new Slack thread with a Claude session |
 | `slaude join URL [topic]` | Join an existing thread with a new agent instance |
-| `slaude resume URL#id` | Resume a previous session in a Slack thread |
+| `slaude resume URL#id[@ts]` | Resume a previous session in a Slack thread |
 | `slaude auth` | Set up Slack credentials |
 | `slaude channels` | List accessible channels |
 | `slaude share FILE -c CHANNEL` | Post a plan file to Slack |

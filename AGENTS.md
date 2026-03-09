@@ -84,6 +84,7 @@ Module: `github.com/sttts/slagent`
 - Preserve existing formatting unless changing semantics.
 - Never stutter in package APIs (e.g. `credential.Load()` not `credential.LoadCredentials()`).
 - Use short canonical variable names like `ch`, `ts`, `cfg`. Long names are for packages.
+- A variable `propertyX` MUST always be propertyX. Never use sentinel values (like `"(resumed)"` for a URL). If it can be X or Y, name it `propertyXorY`.
 
 ## Architecture Notes
 - Turn interface abstracts Slack backends (compat vs native).

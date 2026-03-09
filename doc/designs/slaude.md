@@ -41,7 +41,7 @@ slaude separates its own flags from Claude flags using `--`:
 ```bash
 slaude start -c CHANNEL -- --permission-mode plan "topic"
 slaude join https://team.slack.com/archives/C123/p1234567890123456 "topic"
-slaude resume https://team.slack.com/archives/C123/p1234567890123456#abc123 -- --resume SESSION_ID
+slaude resume https://team.slack.com/archives/C123/p1234567890123456#abc123@1700000005.000000 -- --resume SESSION_ID
 ```
 
 ### slaude flags
@@ -62,7 +62,7 @@ controlled by the user directly.
 
 - `slaude start` — start a new session mirrored to Slack
 - `slaude join URL` — join an existing thread with a new slaude instance
-- `slaude resume URL#instanceID -- --resume SESSION_ID` — resume an existing session
+- `slaude resume URL#instanceID@lastTS -- --resume SESSION_ID` — resume an existing session
 - `slaude auth` — extract credentials from Slack desktop app (default), or `--manual` to paste a token
 - `slaude channels` — list accessible channels
 - `slaude share FILE -c CHANNEL` — post a plan file to Slack
@@ -70,13 +70,16 @@ controlled by the user directly.
 
 ### Thread URLs
 
-`--resume-thread` accepts Slack permalink URLs:
+`join` and `resume` accept Slack permalink URLs:
 ```
-https://workspace.slack.com/archives/CHANNEL/pTIMESTAMP#instanceID
+https://workspace.slack.com/archives/CHANNEL/pTIMESTAMP#instanceID[@lastTS]
 ```
 
 The channel and thread timestamp are extracted from the URL. The `#instanceID`
 fragment carries the slagent instance ID for block_id tagging on resume.
+The optional `@lastTS` suffix is a cursor: the timestamp of the last seen
+message. On resume, all messages up to this point are skipped, avoiding
+re-processing of old commands and feedback.
 
 ## Auth
 
@@ -150,9 +153,11 @@ The `result` event marks the end of a turn. At this point:
 ### Early Thinking
 
 When forwarding a Slack message to Claude, the session creates a turn and
-posts a "thinking..." activity immediately — before Claude starts responding.
-This gives instant visual feedback in Slack. The same turn is then passed to
-`readTurn()` so Claude's actual response replaces the thinking activity.
+posts an `{emoji}:claude:` activity immediately — before Claude starts
+responding. This gives instant visual feedback in Slack. The same turn is
+then passed to `readTurn()` so Claude's actual response replaces the
+thinking activity. If no real content follows (no text, no tools, no
+substantive thinking), the activity is deleted on finish.
 
 Messages addressed to other instances (`:other_emoji::`) skip this since
 Claude will silently ignore them anyway.
