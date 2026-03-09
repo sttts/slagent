@@ -58,6 +58,7 @@ type Session struct {
 	replyMu     sync.Mutex
 	replies     []slagent.Reply
 	replyNotify chan struct{} // signaled when new replies arrive
+	stopNotify  chan struct{} // signaled when a "stop" message arrives
 
 	// Task tracking: TodoWrite state mirrored to Slack
 	todos   []todo
@@ -93,6 +94,7 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 		cfg:         cfg,
 		ui:          ui,
 		replyNotify: make(chan struct{}, 1),
+		stopNotify:  make(chan struct{}, 1),
 	}
 
 	// Open debug log
@@ -413,6 +415,12 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 	return resume, nil
 }
 
+// eventOrErr holds a ReadEvent result for channel communication.
+type eventOrErr struct {
+	evt *claude.Event
+	err error
+}
+
 // readTurn reads events from Claude until the turn ends (result event).
 // If earlyTurn is non-nil, it is used instead of creating a new turn
 // (allows showing thinking activity before Claude starts responding).
@@ -440,8 +448,40 @@ func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 		}
 	}
 
-	for {
+	// Drain stop channel before starting (ignore stale signals)
+	select {
+	case <-s.stopNotify:
+	default:
+	}
+
+	// Read events in a goroutine so we can select on stop signals
+	evtCh := make(chan eventOrErr, 1)
+	readNext := func() {
 		evt, err := s.proc.ReadEvent()
+		evtCh <- eventOrErr{evt, err}
+	}
+	go readNext()
+
+	for {
+		var evt *claude.Event
+		var err error
+
+		select {
+		case result := <-evtCh:
+			evt, err = result.evt, result.err
+		case <-s.stopNotify:
+			// Interrupt Claude — it will abort the current turn
+			s.proc.Interrupt()
+			s.ui.Info("⏹️ Interrupted")
+			if s.thread != nil {
+				s.thread.Post("⏹️ Interrupted")
+			}
+
+			// Continue reading — Claude will emit a result event after SIGINT
+			result := <-evtCh
+			evt, err = result.evt, result.err
+		}
+
 		if err != nil {
 			if turn != nil {
 				turn.Finish()
@@ -570,6 +610,9 @@ func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 			// New turn — previous tool (if any) has completed
 			finishTool()
 		}
+
+		// Kick off next read
+		go readNext()
 	}
 }
 
@@ -747,14 +790,36 @@ func (s *Session) pollSlack(ctx context.Context) {
 			if err != nil {
 				continue
 			}
-			if len(replies) > 0 {
+			if len(replies) == 0 {
+				continue
+			}
+
+			// Separate stop signals from regular replies
+			hasStop := false
+			var regular []slagent.Reply
+			for _, r := range replies {
+				if r.Stop {
+					hasStop = true
+				} else {
+					regular = append(regular, r)
+				}
+			}
+
+			if len(regular) > 0 {
 				s.replyMu.Lock()
-				s.replies = append(s.replies, replies...)
+				s.replies = append(s.replies, regular...)
 				s.replyMu.Unlock()
 
-				// Signal that replies are available
 				select {
 				case s.replyNotify <- struct{}{}:
+				default:
+				}
+			}
+
+			// Signal stop (interrupts readTurn)
+			if hasStop {
+				select {
+				case s.stopNotify <- struct{}{}:
 				default:
 				}
 			}

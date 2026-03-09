@@ -167,6 +167,25 @@ substantive thinking), the activity is deleted on finish.
 Messages addressed to other instances (`:other_emoji::`) skip this since
 Claude will silently ignore them anyway.
 
+### Interrupt (stop)
+
+Typing `stop` (or `:emoji:: stop` for a specific instance) in the thread
+interrupts Claude's current turn. The mechanism:
+
+1. `pollOnce()` recognizes "stop" (case-insensitive, with spaces) and returns
+   a `Reply{Stop: true}`
+2. `pollSlack()` separates stop signals from regular replies and signals
+   `stopNotify`
+3. `readTurn()` runs `ReadEvent()` in a goroutine and selects on both the
+   event channel and `stopNotify`
+4. On stop: `Process.Interrupt()` sends SIGINT to Claude (like pressing Escape)
+5. Claude aborts the current operation and emits a `result` event
+6. `readTurn()` continues consuming events until the `result` arrives, then
+   returns normally
+
+Bare `stop` interrupts all instances. Targeted `:emoji:: stop` is
+instance-exclusive (only the addressed instance receives it).
+
 ### Tool Lifecycle
 
 Tools are tracked across their lifecycle in session.go:

@@ -31,6 +31,7 @@ type Reply struct {
 	UserID  string // Slack user ID
 	Text    string
 	Command string // If set, a /command to forward (not team feedback)
+	Stop    bool   // If set, interrupt the current Claude turn
 }
 
 // ThreadOption configures a Thread.

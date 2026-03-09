@@ -104,9 +104,29 @@ func (t *Thread) pollOnce() ([]Reply, error) {
 		// Parse :shortcode:: prefix targeting
 		targetID, rest, targeted := parseMessage(msg.Text)
 
-		// Bare "help" from anyone → post help text
-		if strings.EqualFold(strings.TrimSpace(msg.Text), "help") {
+		// "help" and "stop" bypass authorization — anyone can use them
+		text := strings.TrimSpace(msg.Text)
+		if targeted {
+			text = strings.TrimSpace(rest)
+		}
+
+		if strings.EqualFold(text, "help") {
+			if targeted && targetID != t.instanceID {
+				t.advanceLastTS(msg.Timestamp)
+				continue
+			}
 			t.Post(t.helpText())
+			t.advanceLastTS(msg.Timestamp)
+			continue
+		}
+		if strings.EqualFold(text, "stop") {
+			// Targeted stop is instance-exclusive
+			if targeted && targetID != t.instanceID {
+				t.advanceLastTS(msg.Timestamp)
+				continue
+			}
+			user := t.resolveUser(msg.User)
+			replies = append(replies, Reply{User: user, UserID: msg.User, Stop: true})
 			t.advanceLastTS(msg.Timestamp)
 			continue
 		}

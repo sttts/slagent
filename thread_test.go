@@ -1326,6 +1326,103 @@ func TestMultiInstanceOtherFinalizedThenHuman(t *testing.T) {
 	}
 }
 
+func TestStopBare(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+		WithInstanceID("dog"),
+	)
+	thread.Start("Test")
+	threadTS := thread.ThreadTS()
+
+	mock.injectReply("C_TEST", threadTS, "U_HUMAN", "stop")
+
+	replies, err := thread.PollReplies()
+	if err != nil {
+		t.Fatalf("PollReplies: %v", err)
+	}
+	if len(replies) != 1 {
+		t.Fatalf("replies = %d, want 1", len(replies))
+	}
+	if !replies[0].Stop {
+		t.Error("reply.Stop = false, want true")
+	}
+	if replies[0].Text != "" {
+		t.Errorf("reply.Text = %q, want empty", replies[0].Text)
+	}
+}
+
+func TestStopCaseInsensitive(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+		WithInstanceID("dog"),
+	)
+	thread.Start("Test")
+	threadTS := thread.ThreadTS()
+
+	mock.injectReply("C_TEST", threadTS, "U_HUMAN", "STOP")
+
+	replies, err := thread.PollReplies()
+	if err != nil {
+		t.Fatalf("PollReplies: %v", err)
+	}
+	if len(replies) != 1 || !replies[0].Stop {
+		t.Fatalf("expected Stop reply for 'STOP'")
+	}
+}
+
+func TestStopTargeted(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+		WithInstanceID("dog"),
+	)
+	thread.Start("Test")
+	threadTS := thread.ThreadTS()
+
+	// Targeted to this instance — should be delivered as stop
+	mock.injectReply("C_TEST", threadTS, "U_HUMAN", ":dog:: stop")
+
+	// Targeted to another instance — should be ignored
+	mock.injectReply("C_TEST", threadTS, "U_HUMAN", ":rhinoceros:: stop")
+
+	replies, err := thread.PollReplies()
+	if err != nil {
+		t.Fatalf("PollReplies: %v", err)
+	}
+	if len(replies) != 1 {
+		t.Fatalf("replies = %d, want 1 (only targeted stop)", len(replies))
+	}
+	if !replies[0].Stop {
+		t.Error("reply.Stop = false, want true")
+	}
+}
+
+func TestStopWithSpaces(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+		WithInstanceID("dog"),
+	)
+	thread.Start("Test")
+	threadTS := thread.ThreadTS()
+
+	mock.injectReply("C_TEST", threadTS, "U_HUMAN", "  stop  ")
+
+	replies, err := thread.PollReplies()
+	if err != nil {
+		t.Fatalf("PollReplies: %v", err)
+	}
+	if len(replies) != 1 || !replies[0].Stop {
+		t.Fatalf("expected Stop reply for '  stop  '")
+	}
+}
+
 func TestRepliesBlockingWithCancel(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()

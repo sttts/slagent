@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 )
 
 // Process wraps a Claude Code subprocess in stream-json mode.
@@ -138,6 +139,15 @@ func (p *Process) SessionID() string {
 // Wait waits for the subprocess to exit.
 func (p *Process) Wait() error {
 	return p.cmd.Wait()
+}
+
+// Interrupt sends SIGINT to the Claude process, causing it to abort the current
+// turn and emit a result event (like pressing Escape in the terminal).
+func (p *Process) Interrupt() error {
+	if p.cmd.Process == nil {
+		return nil
+	}
+	return p.cmd.Process.Signal(syscall.SIGINT)
 }
 
 // Stop closes stdin and waits for the process to exit.
