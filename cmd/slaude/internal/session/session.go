@@ -202,7 +202,8 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 				"Instance targeting:\n"+
 				"- :%s:: (with colon after the emoji) explicitly addresses you. Act on these.\n"+
 				"- :other_emoji:: (a different instance's shortcode with colon) explicitly addresses "+
-				"another agent. Ignore these unless directly relevant to your task.\n"+
+				"another agent. SILENTLY ignore these — do not respond, do not acknowledge, "+
+				"do not say \"that message is for another instance\". Just produce no output at all.\n"+
 				"- :%s:: /command sends a slash command exclusively to you — other instances never see it.\n"+
 				"- %s without a trailing colon is ambiguous — it could be someone talking to you, "+
 				"or just a message mentioning you. Use context to decide whether to respond.\n"+
