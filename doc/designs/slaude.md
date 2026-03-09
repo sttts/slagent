@@ -287,6 +287,25 @@ Messages at the bottom of the thread follow this order:
 2. **Tasks message** — persistent TODO list (only shown when tasks exist)
 3. **Question/prompt** — interactive prompt with reaction emojis (optional)
 
+### Reply Filtering
+
+The poller (`pollOnce()` in `reply.go`) classifies messages by their
+`block_id` prefix (`slagent-{instanceID}`) and filters aggressively:
+
+| Block kind | block_id pattern | Action |
+|---|---|---|
+| Activity | `slagent-{id}~act` | Always skip, advance cursor |
+| Streaming | `slagent-{id}~` | Skip, do NOT advance (re-check next poll) |
+| Finalized | `slagent-{id}` | Always skip (own and other instances), advance cursor |
+| None | no slagent prefix | Process as user message |
+
+All slagent messages (activity, streaming, finalized) from all instances are
+hard-filtered. Only non-slagent messages (human users, bots) are delivered
+as replies. This prevents agents from reacting to each other's output,
+thinking indicators, or activity messages.
+
+Bot messages (`msg.BotID != ""`) are also skipped.
+
 ## Interactive Prompts
 
 Interactive tools (ExitPlanMode, AskUserQuestion, EnterPlanMode) are posted
