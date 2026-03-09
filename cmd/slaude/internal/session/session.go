@@ -113,13 +113,17 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 		replyNotify: make(chan struct{}, 1),
 		stopNotify:  make(chan struct{}, 1),
 		knownHosts: map[string]bool{
-			"proxy.golang.org":  true,
-			"sum.golang.org":    true,
+			"proxy.golang.org":   true,
+			"sum.golang.org":     true,
 			"registry.npmjs.org": true,
-			"github.com":        true,
-			"pypi.org":          true,
-			"rubygems.org":      true,
-			"crates.io":         true,
+			"github.com":         true,
+			"api.github.com":     true,
+			"raw.githubusercontent.com": true,
+			"pypi.org":           true,
+			"files.pythonhosted.org": true,
+			"rubygems.org":       true,
+			"crates.io":          true,
+			"static.crates.io":   true,
 		},
 	}
 
