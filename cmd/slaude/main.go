@@ -633,9 +633,12 @@ func runAuthExtract() error {
 	}
 	fmt.Printf("\n✅ %s added\n", key)
 
-	// Ask whether to set as default
+	// Set as default if there isn't one yet, otherwise ask
 	_, defaultName, _ := credential.ListWorkspaces()
-	if defaultName != key {
+	if defaultName == "" {
+		credential.SetDefault(key)
+		fmt.Printf("⭐ Default workspace: %s\n", key)
+	} else if defaultName != key {
 		reader := bufio.NewReader(os.Stdin)
 		fmt.Printf("⭐ Set %s as default workspace? [y/N]: ", key)
 		line, _ := reader.ReadString('\n')
