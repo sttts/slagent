@@ -171,27 +171,42 @@ When using `--dangerous-auto-approve-network known`, slaude checks network desti
 To customize, create `~/.config/slagent/known-hosts.yaml`:
 
 ```yaml
-# Package managers
+# Simple host entries (default: GET and HEAD only)
 - host: proxy.golang.org
 - host: sum.golang.org
 - host: registry.npmjs.org
 - host: pypi.org
-- host: files.pythonhosted.org
-- host: rubygems.org
-- host: crates.io
-- host: static.crates.io
-
-# GitHub
 - host: github.com
-- host: api.github.com
-- host: raw.githubusercontent.com
 
-# Glob patterns
-- host: "*.googleapis.com"
-- host: "*.amazonaws.com"
+# Host glob patterns (* = one label, ** = one or more labels)
+- host: "*.googleapis.com"       # matches storage.googleapis.com
+- host: "**.amazonaws.com"       # matches s3.us-east-1.amazonaws.com
+
+# Restrict by URL path
+- host: api.github.com
+  path: "/repos/**"
+
+# Allow specific HTTP methods (default: [GET, HEAD])
+- host: registry.npmjs.org
+  methods: [GET, HEAD, PUT]
+
+# Full example: host + path + methods
+- host: api.example.com
+  path: "/v1/read/**"
+  methods: [GET]
 ```
 
-When this file exists, it **replaces** the built-in defaults entirely. Glob patterns (`*`, `?`, `[...]`) are supported via Go's `path.Match`.
+When this file exists, it **replaces** the built-in defaults entirely.
+
+**Host patterns** (DNS-aware):
+- `*` matches exactly one DNS label — `*.github.com` matches `api.github.com` but not `a.b.github.com`
+- `**` matches one or more DNS labels — `**.github.com` matches `api.github.com` and `a.b.github.com`
+
+**Path patterns** (URL path segments):
+- `*` matches exactly one path segment — `/repos/*` matches `/repos/foo` but not `/repos/foo/bar`
+- `**` matches one or more segments — `/repos/**` matches `/repos/foo` and `/repos/foo/bar`
+
+**Methods** default to `[GET, HEAD]` when omitted. The AI classifier extracts the HTTP method from each tool call for matching.
 
 #### Slack approval reactions
 

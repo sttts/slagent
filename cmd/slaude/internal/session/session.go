@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
-	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -664,43 +663,124 @@ func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 	}
 }
 
-// knownHostSet holds exact hosts and glob patterns for known-safe network destinations.
-type knownHostSet struct {
-	exact    map[string]bool
-	patterns []string // glob patterns (e.g. "*.googleapis.com")
+// knownDest is a known-safe network destination.
+type knownDest struct {
+	Host    string            // exact host or glob pattern (e.g. "*.github.com")
+	Path    string            // optional URL path glob (e.g. "/repos/**"); empty = any path
+	Methods map[string]bool   // optional allowed HTTP methods (e.g. GET, HEAD); nil = any method
 }
 
-// match returns true if host is in the known set (exact or glob match).
+// knownHostSet holds known-safe network destinations for auto-approve.
+type knownHostSet struct {
+	dests []knownDest
+}
+
+// match returns true if host matches a known destination (any path, any method).
 func (k *knownHostSet) match(host string) bool {
-	if k.exact[host] {
-		return true
-	}
-	for _, p := range k.patterns {
-		if matched, _ := path.Match(p, host); matched {
-			return true
+	return k.matchRequest(host, "", "")
+}
+
+// matchRequest returns true if host + URL path + method matches a known destination.
+// Empty urlPath or method means "any".
+func (k *knownHostSet) matchRequest(host, urlPath, method string) bool {
+	for _, d := range k.dests {
+		if !matchHostPattern(d.Host, host) && d.Host != host {
+			continue
 		}
+		if d.Path != "" && (urlPath == "" || !matchPathPattern(d.Path, urlPath)) {
+			continue
+		}
+		if d.Methods != nil {
+			if method == "" || !d.Methods[strings.ToUpper(method)] {
+				continue
+			}
+		}
+		return true
 	}
 	return false
 }
 
-// add adds an exact host to the set.
-func (k *knownHostSet) add(host string) {
-	k.exact[host] = true
+// matchHostPattern matches a host against a DNS-aware glob pattern.
+//   - "*" matches exactly one DNS label (no dots)
+//   - "**" matches one or more DNS labels
+//
+// Examples:
+//
+//	*.github.com     matches api.github.com       but NOT a.b.github.com
+//	**.github.com    matches api.github.com       AND a.b.github.com
+//	**.github.com    does NOT match github.com    (** = one or more)
+func matchHostPattern(pattern, host string) bool {
+	pparts := strings.Split(pattern, ".")
+	hparts := strings.Split(host, ".")
+
+	return matchParts(pparts, hparts)
 }
 
-// defaultKnownHosts are used when no known-hosts.yaml exists.
-var defaultKnownHosts = []string{
-	"github.com",
-	"api.github.com",
-	"raw.githubusercontent.com",
-	"proxy.golang.org",
-	"sum.golang.org",
-	"registry.npmjs.org",
-	"pypi.org",
-	"files.pythonhosted.org",
-	"rubygems.org",
-	"crates.io",
-	"static.crates.io",
+// matchParts recursively matches pattern parts against host parts.
+func matchParts(pparts, hparts []string) bool {
+	for len(pparts) > 0 && len(hparts) > 0 {
+		p := pparts[0]
+		if p == "**" {
+			// ** matches one or more labels — try consuming 1..N host labels
+			rest := pparts[1:]
+			for i := 1; i <= len(hparts)-len(rest); i++ {
+				if matchParts(rest, hparts[i:]) {
+					return true
+				}
+			}
+			return false
+		}
+
+		// * matches exactly one label, literal must match exactly
+		if p != "*" && p != hparts[0] {
+			return false
+		}
+		pparts = pparts[1:]
+		hparts = hparts[1:]
+	}
+
+	return len(pparts) == 0 && len(hparts) == 0
+}
+
+// matchPathPattern matches a URL path against a glob pattern using "/" as separator.
+//   - "*" matches exactly one path segment
+//   - "**" matches one or more path segments
+func matchPathPattern(pattern, urlPath string) bool {
+	pparts := splitPath(pattern)
+	hparts := splitPath(urlPath)
+	return matchParts(pparts, hparts)
+}
+
+// splitPath splits a path into segments, stripping leading/trailing slashes.
+func splitPath(p string) []string {
+	p = strings.Trim(p, "/")
+	if p == "" {
+		return nil
+	}
+	return strings.Split(p, "/")
+}
+
+// add adds an exact host to the set.
+func (k *knownHostSet) add(host string) {
+	k.dests = append(k.dests, knownDest{Host: host})
+}
+
+// readOnly is the default method set: GET and HEAD only.
+var readOnly = map[string]bool{"GET": true, "HEAD": true}
+
+// defaultKnownDests are used when no known-hosts.yaml exists.
+var defaultKnownDests = []knownDest{
+	{Host: "github.com", Methods: readOnly},
+	{Host: "api.github.com", Methods: readOnly},
+	{Host: "raw.githubusercontent.com", Methods: readOnly},
+	{Host: "proxy.golang.org", Methods: readOnly},
+	{Host: "sum.golang.org", Methods: readOnly},
+	{Host: "registry.npmjs.org", Methods: readOnly},
+	{Host: "pypi.org", Methods: readOnly},
+	{Host: "files.pythonhosted.org", Methods: readOnly},
+	{Host: "rubygems.org", Methods: readOnly},
+	{Host: "crates.io", Methods: readOnly},
+	{Host: "static.crates.io", Methods: readOnly},
 }
 
 // knownHostsPaths returns candidate paths for known-hosts.yaml.
@@ -715,44 +795,40 @@ func knownHostsPaths() []string {
 // loadKnownHosts loads the known host set from ~/.config/slagent/known-hosts.yaml,
 // falling back to built-in defaults if the file doesn't exist.
 //
-// File format (YAML list with host key):
+// File format:
 //
 //	- host: github.com
-//	- host: api.github.com
 //	- host: "*.googleapis.com"
+//	  path: "/storage/v1/**"
+//	- host: api.github.com
+//	  path: "/repos/**"
+//	  methods: [GET, HEAD]
 func loadKnownHosts() *knownHostSet {
-	set := &knownHostSet{exact: make(map[string]bool)}
+	set := &knownHostSet{}
 
 	for _, p := range knownHostsPaths() {
-		if entries, err := parseKnownHostsFile(p); err == nil {
-			for _, e := range entries {
-				if strings.ContainsAny(e, "*?[") {
-					set.patterns = append(set.patterns, e)
-				} else {
-					set.exact[e] = true
-				}
-			}
+		if dests, err := parseKnownHostsFile(p); err == nil {
+			set.dests = dests
 			return set
 		}
 	}
 
 	// No file found — use defaults
-	for _, h := range defaultKnownHosts {
-		set.exact[h] = true
-	}
+	set.dests = append(set.dests, defaultKnownDests...)
 	return set
 }
 
 // parseKnownHostsFile reads a known-hosts.yaml file.
-// Format: YAML list with "- host: value" entries. Ignores comments (#).
-func parseKnownHostsFile(filePath string) ([]string, error) {
+// Entries start with "- host: value" and optionally "  path: value" on the next line.
+func parseKnownHostsFile(filePath string) ([]knownDest, error) {
 	f, err := os.Open(filePath)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
 
-	var hosts []string
+	var dests []knownDest
+	var current *knownDest
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -762,26 +838,62 @@ func parseKnownHostsFile(filePath string) ([]string, error) {
 			continue
 		}
 
-		// Strip YAML list prefix
-		line = strings.TrimPrefix(line, "- ")
-		line = strings.TrimSpace(line)
-
-		// Expect "host: value"
-		if !strings.HasPrefix(line, "host:") {
+		// New entry: "- host: value"
+		if strings.HasPrefix(line, "- host:") {
+			// Flush previous entry (default methods to GET+HEAD if unset)
+			if current != nil {
+				if current.Methods == nil {
+					current.Methods = map[string]bool{"GET": true, "HEAD": true}
+				}
+				dests = append(dests, *current)
+			}
+			value := unquote(strings.TrimSpace(strings.TrimPrefix(line, "- host:")))
+			if value != "" {
+				current = &knownDest{Host: value}
+			} else {
+				current = nil
+			}
 			continue
 		}
-		value := strings.TrimSpace(strings.TrimPrefix(line, "host:"))
 
-		// Strip quotes
-		if len(value) >= 2 && (value[0] == '"' || value[0] == '\'') && value[len(value)-1] == value[0] {
-			value = value[1 : len(value)-1]
+		// Continuation: "path: value" (belongs to current entry)
+		if strings.HasPrefix(line, "path:") && current != nil {
+			value := unquote(strings.TrimSpace(strings.TrimPrefix(line, "path:")))
+			current.Path = value
+			continue
 		}
 
-		if value != "" {
-			hosts = append(hosts, value)
+		// Continuation: "methods: [GET, HEAD]" (belongs to current entry)
+		if strings.HasPrefix(line, "methods:") && current != nil {
+			raw := strings.TrimSpace(strings.TrimPrefix(line, "methods:"))
+			raw = strings.Trim(raw, "[]")
+			current.Methods = make(map[string]bool)
+			for _, m := range strings.Split(raw, ",") {
+				m = strings.TrimSpace(m)
+				if m != "" {
+					current.Methods[strings.ToUpper(m)] = true
+				}
+			}
+			continue
 		}
 	}
-	return hosts, scanner.Err()
+
+	// Flush last entry (default methods to GET+HEAD if unset)
+	if current != nil {
+		if current.Methods == nil {
+			current.Methods = map[string]bool{"GET": true, "HEAD": true}
+		}
+		dests = append(dests, *current)
+	}
+	return dests, scanner.Err()
+}
+
+// unquote strips surrounding single or double quotes from a YAML value.
+func unquote(s string) string {
+	if len(s) >= 2 && (s[0] == '"' || s[0] == '\'') && s[len(s)-1] == s[0] {
+		return s[1 : len(s)-1]
+	}
+	return s
 }
 
 // autoApproveSummary returns a human-readable summary of the auto-approve policy.
@@ -825,7 +937,9 @@ func autoApproveSummary(level, network string) string {
 type classification struct {
 	Level      string // "green", "yellow", "red"
 	Network    bool   // involves network access
-	NetworkDst string // destination if network (e.g. "proxy.golang.org", "unknown")
+	NetworkDst string // destination host if network (e.g. "proxy.golang.org", "unknown")
+	NetworkPath string // URL path if network (e.g. "/repos/foo/bar"); may be empty
+	Method     string // HTTP method if network (e.g. "GET", "POST"); may be empty
 	Reasoning  string // one-sentence explanation
 }
 
@@ -848,22 +962,25 @@ Risk levels:
 - YELLOW: local writes to project files, running tests, installing deps from known sources
 - RED: arbitrary code execution with untrusted input, modifying system files, exfiltrating data, credential access, destructive ops
 
-Network: does this operation access the network? If yes, what destination?
+Network: does this operation access the network? If yes, what destination, path, and HTTP method?
 
 Respond with EXACTLY one line in this format:
 LEVEL|NETWORK_STATUS|reasoning
 
 Where:
 - LEVEL is GREEN, YELLOW, or RED
-- NETWORK_STATUS is either "NONE" or "NETWORK:destination" (e.g. "NETWORK:proxy.golang.org" or "NETWORK:unknown")
+- NETWORK_STATUS is either "NONE" or "NETWORK:METHOD:host/path" (e.g. "NETWORK:GET:api.github.com/repos/foo" or "NETWORK:GET:proxy.golang.org" or "NETWORK:unknown")
+- METHOD is the HTTP method (GET, POST, PUT, DELETE, etc.) or omitted if unknown
 - reasoning is a short one-sentence explanation
 
 Examples:
 GREEN|NONE|Reading source file within project
 YELLOW|NONE|Writing test file in project directory
-GREEN|NETWORK:proxy.golang.org|Fetching Go module from official proxy
-RED|NETWORK:evil.com|Downloading and executing remote script from unknown host
-YELLOW|NETWORK:registry.npmjs.org|Installing npm packages from official registry`, toolName, string(input), cwd)
+GREEN|NETWORK:GET:proxy.golang.org|Fetching Go module from official proxy
+GREEN|NETWORK:GET:api.github.com/repos/sttts/nanoschnack|Querying GitHub API for repo info
+RED|NETWORK:GET:evil.com/payload|Downloading script from unknown host
+YELLOW|NETWORK:GET:registry.npmjs.org|Installing npm packages from official registry
+RED|NETWORK:POST:webhook.example.com/hook|Sending data to external webhook`, toolName, string(input), cwd)
 
 	ctx, cancel := context.WithTimeout(ctx, classificationTimeout)
 	defer cancel()
@@ -909,17 +1026,44 @@ func parseClassification(line string) *classification {
 		c.Level = "red"
 	}
 
-	// Parse network status
+	// Parse network status: NONE, NETWORK:host, NETWORK:METHOD:host/path
 	netPart := strings.TrimSpace(parts[1])
 	if strings.HasPrefix(strings.ToUpper(netPart), "NETWORK:") {
 		c.Network = true
-		c.NetworkDst = strings.TrimSpace(netPart[len("NETWORK:"):])
+		rest := strings.TrimSpace(netPart[len("NETWORK:"):])
+
+		// Try NETWORK:METHOD:host/path format
+		if colonIdx := strings.Index(rest, ":"); colonIdx > 0 {
+			maybeMethod := strings.ToUpper(rest[:colonIdx])
+			if isHTTPMethod(maybeMethod) {
+				c.Method = maybeMethod
+				rest = rest[colonIdx+1:]
+			}
+		}
+
+		// Split host/path
+		if slashIdx := strings.Index(rest, "/"); slashIdx > 0 {
+			c.NetworkDst = rest[:slashIdx]
+			c.NetworkPath = rest[slashIdx:]
+		} else {
+			c.NetworkDst = rest
+		}
+
 		if c.NetworkDst == "" {
 			c.NetworkDst = "unknown"
 		}
 	}
 
 	return c
+}
+
+// isHTTPMethod returns true if s is a known HTTP method.
+func isHTTPMethod(s string) bool {
+	switch s {
+	case "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS":
+		return true
+	}
+	return false
 }
 
 // levelEmoji returns the colored circle emoji for a classification level.
@@ -995,7 +1139,7 @@ func (s *Session) handlePermission(req *perms.PermissionRequest) *perms.Permissi
 		case "any":
 			networkOK = true
 		case "known":
-			networkOK = s.knownHosts.match(cls.NetworkDst)
+			networkOK = s.knownHosts.matchRequest(cls.NetworkDst, cls.NetworkPath, cls.Method)
 		default:
 			networkOK = false
 		}
@@ -1006,7 +1150,7 @@ func (s *Session) handlePermission(req *perms.PermissionRequest) *perms.Permissi
 		var reason string
 		if cls.Network {
 			knownTag := "unknown"
-			if s.knownHosts.match(cls.NetworkDst) {
+			if s.knownHosts.matchRequest(cls.NetworkDst, cls.NetworkPath, cls.Method) {
 				knownTag = "known"
 			}
 			reason = fmt.Sprintf("%s+%s", cls.Level, knownTag)
