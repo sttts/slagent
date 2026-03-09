@@ -627,6 +627,13 @@ func runAuthManual() error {
 	}
 
 	creds := &credential.Credentials{Token: token, Type: tokenType}
+
+	// Detect enterprise grid
+	sc := slackclient.New(token, "")
+	if resp, err := sc.AuthTest(); err == nil && resp.EnterpriseID != "" {
+		creds.Enterprise = true
+	}
+
 	if err := credential.Save(key, creds); err != nil {
 		return fmt.Errorf("saving credentials: %w", err)
 	}
@@ -679,10 +686,13 @@ func runAuthExtract() error {
 		Cookie: result.Cookie,
 	}
 
-	// Detect enterprise grid before saving
+	// Detect enterprise grid — session tokens are unreliable there
 	sc := slackclient.New(creds.EffectiveToken(), creds.Cookie)
 	if resp, err := sc.AuthTest(); err == nil && resp.EnterpriseID != "" {
-		creds.Enterprise = true
+		fmt.Println("⚠️ Enterprise grid workspace detected.")
+		fmt.Println("  Session tokens (xoxc-) are unreliable on enterprise — Slack revokes them.")
+		fmt.Println("  Run 'slaude auth --manual' to create a Slack app and paste a user token (xoxp-).")
+		return fmt.Errorf("enterprise grid does not support extracted session tokens")
 	}
 
 	if err := credential.Save(key, creds); err != nil {
