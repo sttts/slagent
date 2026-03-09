@@ -7,6 +7,8 @@ import (
 	"sync"
 
 	slackapi "github.com/slack-go/slack"
+
+	"github.com/sttts/slagent/client"
 )
 
 // slagentBlockPrefix is the prefix for block IDs on all slagent-posted messages.
@@ -104,9 +106,8 @@ func (t *Thread) logSlack(action, content string) {
 
 // Thread manages an agent session in a Slack thread.
 type Thread struct {
-	api        *slackapi.Client
-	token      string // raw token for backend detection and native API calls
-	channel    string
+	client  *client.Client
+	channel string
 	threadTS   string
 	instanceID string // unique per slaude instance, used in block_id
 	blockID    string // "slagent-{instanceID}", cached
@@ -131,9 +132,7 @@ type Thread struct {
 }
 
 // NewThread creates a new thread manager.
-// The token is needed for backend detection (xoxb- → native, xoxc-/xoxp- → compat)
-// and for native streaming API calls.
-func NewThread(client *slackapi.Client, token, channel string, opts ...ThreadOption) *Thread {
+func NewThread(c *client.Client, channel string, opts ...ThreadOption) *Thread {
 	cfg := defaultConfig()
 	for _, o := range opts {
 		o(&cfg)
@@ -145,8 +144,7 @@ func NewThread(client *slackapi.Client, token, channel string, opts ...ThreadOpt
 	}
 
 	t := &Thread{
-		api:          client,
-		token:        token,
+		client:       c,
 		channel:      channel,
 		instanceID:   instanceID,
 		blockID:      slagentBlockPrefix + instanceID,
@@ -174,7 +172,7 @@ func (t *Thread) Start(title string) (string, error) {
 	label := t.formatTitle()
 
 	t.logSlack("postMessage(thread-start)", label)
-	_, ts, err := t.api.PostMessage(
+	_, ts, err := t.client.PostMessage(
 		t.channel,
 		slackapi.MsgOptionBlocks(t.slagentSection(label)),
 		slackapi.MsgOptionText(label, false),
@@ -188,7 +186,7 @@ func (t *Thread) Start(title string) (string, error) {
 	t.lastTS = ts
 	t.mu.Unlock()
 
-	link, err := t.api.GetPermalink(&slackapi.PermalinkParameters{
+	link, err := t.client.GetPermalink(&slackapi.PermalinkParameters{
 		Channel: t.channel,
 		Ts:      ts,
 	})
@@ -220,7 +218,7 @@ func (t *Thread) Resume(threadTS string, afterTS ...string) {
 			Timestamp: threadTS,
 			Limit:     1,
 		}
-		msgs, _, _, err := t.api.GetConversationReplies(params)
+		msgs, _, _, err := t.client.GetConversationReplies(params)
 		if err == nil && len(msgs) > 0 {
 			t.parseTitle(msgs[0].Text)
 		}
@@ -235,7 +233,7 @@ func (t *Thread) Resume(threadTS string, afterTS ...string) {
 		ChannelID: t.channel,
 		Timestamp: threadTS,
 	}
-	msgs, _, _, err := t.api.GetConversationReplies(params)
+	msgs, _, _, err := t.client.GetConversationReplies(params)
 	if err != nil || len(msgs) == 0 {
 		return
 	}
@@ -257,10 +255,10 @@ func (t *Thread) NewTurn() Turn {
 
 	// Select backend based on token type
 	var w turnWriter
-	if isNativeToken(t.token) {
-		w = newNativeTurn(t.token, t.config.apiURL, t.channel, threadTS, t.config.markdownConverter, t.config.bufferSize)
+	if isNativeToken(t.client.Token()) {
+		w = newNativeTurn(t.client.Token(), t.config.apiURL, t.channel, threadTS, t.config.markdownConverter, t.config.bufferSize)
 	} else {
-		w = newCompatTurn(t.api, t.channel, threadTS, t.blockID, t.emoji, t.config.slackLog)
+		w = newCompatTurn(t.client.Client, t.channel, threadTS, t.blockID, t.emoji, t.config.slackLog)
 	}
 	return &turnImpl{w: w}
 }
@@ -276,7 +274,7 @@ func (t *Thread) Post(text string) (string, error) {
 	}
 
 	t.logSlack("postMessage(post)", text)
-	_, ts, err := t.api.PostMessage(
+	_, ts, err := t.client.PostMessage(
 		t.channel,
 		slackapi.MsgOptionBlocks(t.slagentSection(text)),
 		slackapi.MsgOptionText(text, false),
@@ -288,7 +286,7 @@ func (t *Thread) Post(text string) (string, error) {
 // UpdateMessage updates an existing message in the thread.
 func (t *Thread) UpdateMessage(msgTS, text string) error {
 	t.logSlack("updateMessage(post)", text)
-	_, _, _, err := t.api.UpdateMessage(
+	_, _, _, err := t.client.UpdateMessage(
 		t.channel,
 		msgTS,
 		slackapi.MsgOptionBlocks(t.slagentSection(text)),
@@ -310,7 +308,7 @@ func (t *Thread) PostPrompt(text string, reactions []string) (string, error) {
 	}
 
 	t.logSlack("postMessage(prompt)", text)
-	_, ts, err := t.api.PostMessage(
+	_, ts, err := t.client.PostMessage(
 		t.channel,
 		slackapi.MsgOptionBlocks(t.slagentSection(text)),
 		slackapi.MsgOptionText(text, false),
@@ -322,9 +320,9 @@ func (t *Thread) PostPrompt(text string, reactions []string) (string, error) {
 
 	// Pre-add reaction emojis as clickable options (session/user tokens only).
 	// Bot tokens will use Block Kit buttons via Socket Mode instead.
-	if !isNativeToken(t.token) {
+	if !isNativeToken(t.client.Token()) {
 		for _, r := range reactions {
-			t.api.AddReaction(r, slackapi.ItemRef{
+			t.client.AddReaction(r, slackapi.ItemRef{
 				Channel:   t.channel,
 				Timestamp: ts,
 			})
@@ -341,7 +339,7 @@ func (t *Thread) PostPrompt(text string, reactions []string) (string, error) {
 // Other users adding reactions is a noop — only the owner's removal counts.
 // Returns the selected reaction name, or "" if no selection yet.
 func (t *Thread) PollReaction(msgTS string, expected []string) (string, error) {
-	item, err := t.api.GetReactions(slackapi.ItemRef{
+	item, err := t.client.GetReactions(slackapi.ItemRef{
 		Channel:   t.channel,
 		Timestamp: msgTS,
 	}, slackapi.NewGetReactionsParameters())
@@ -377,12 +375,12 @@ func (t *Thread) FinalizeReaction(msgTS, selected string, all []string) {
 	ref := slackapi.ItemRef{Channel: t.channel, Timestamp: msgTS}
 
 	// Re-add the selected reaction (owner's click toggled it off)
-	t.api.AddReaction(selected, ref)
+	t.client.AddReaction(selected, ref)
 
 	// Remove the non-selected reactions
 	for _, r := range all {
 		if r != selected {
-			t.api.RemoveReaction(r, ref)
+			t.client.RemoveReaction(r, ref)
 		}
 	}
 }
@@ -390,7 +388,7 @@ func (t *Thread) FinalizeReaction(msgTS, selected string, all []string) {
 // DeleteMessage deletes a message from the thread.
 func (t *Thread) DeleteMessage(msgTS string) error {
 	t.logSlack("deleteMessage", msgTS)
-	_, _, err := t.api.DeleteMessage(t.channel, msgTS)
+	_, _, err := t.client.DeleteMessage(t.channel, msgTS)
 	return err
 }
 
@@ -411,7 +409,7 @@ func (t *Thread) PostBlocks(fallback string, blocks ...slackapi.Block) error {
 
 	tagged := t.tagBlocks(blocks)
 	t.logSlack("postMessage(blocks)", fallback)
-	_, _, err := t.api.PostMessage(
+	_, _, err := t.client.PostMessage(
 		t.channel,
 		slackapi.MsgOptionBlocks(tagged...),
 		slackapi.MsgOptionText(fallback, false),
@@ -439,7 +437,7 @@ func (t *Thread) PostUser(user, text string) error {
 	)
 	fallback := fmt.Sprintf("@%s: %s", user, text)
 	t.logSlack("postMessage(user)", fallback)
-	_, _, err := t.api.PostMessage(
+	_, _, err := t.client.PostMessage(
 		t.channel,
 		slackapi.MsgOptionBlocks(ctx, section),
 		slackapi.MsgOptionText(fallback, false),
@@ -464,7 +462,7 @@ func (t *Thread) PostMarkdown(text string) error {
 		fenced := "```\n" + chunk + "\n```"
 		section := t.slagentSection(fenced)
 		t.logSlack("postMessage(markdown)", fenced)
-		_, _, err := t.api.PostMessage(
+		_, _, err := t.client.PostMessage(
 			t.channel,
 			slackapi.MsgOptionBlocks(section),
 			slackapi.MsgOptionText(chunk, false),
@@ -505,7 +503,7 @@ func (t *Thread) URL() string {
 	if ts == "" {
 		return ""
 	}
-	link, err := t.api.GetPermalink(&slackapi.PermalinkParameters{
+	link, err := t.client.GetPermalink(&slackapi.PermalinkParameters{
 		Channel: t.channel,
 		Ts:      ts,
 	})
@@ -529,7 +527,7 @@ func (t *Thread) resolveUser(userID string) string {
 	}
 	t.mu.Unlock()
 
-	info, err := t.api.GetUserInfo(userID)
+	info, err := t.client.GetUserInfo(userID)
 	if err != nil {
 		return userID
 	}
@@ -677,7 +675,7 @@ func (t *Thread) updateTitle() {
 
 	label := t.formatTitle()
 	t.logSlack("updateMessage(title)", label)
-	t.api.UpdateMessage(
+	t.client.UpdateMessage(
 		t.channel,
 		threadTS,
 		slackapi.MsgOptionBlocks(t.slagentSection(label)),

@@ -16,6 +16,7 @@ import (
 	slackapi "github.com/slack-go/slack"
 
 	"github.com/sttts/slagent"
+	slackclient "github.com/sttts/slagent/client"
 	"github.com/sttts/slagent/cmd/slaude/internal/claude"
 	"github.com/sttts/slagent/cmd/slaude/internal/perms"
 	"github.com/sttts/slagent/cmd/slaude/internal/terminal"
@@ -118,7 +119,7 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 		if err != nil {
 			return nil, fmt.Errorf("slack credentials: %w", err)
 		}
-		client := slagent.NewSlackClient(creds.EffectiveToken(), creds.Cookie)
+		client := slackclient.New(creds.EffectiveToken(), creds.Cookie)
 
 		// Resolve channel display name if not already set
 		if cfg.ChannelName == "" {
@@ -167,7 +168,7 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 			opts = append(opts, slagent.WithSlackLog(slackLog))
 		}
 
-		sess.thread = slagent.NewThread(client, creds.EffectiveToken(), cfg.Channel, opts...)
+		sess.thread = slagent.NewThread(client, cfg.Channel, opts...)
 	}
 
 	extraArgs := append([]string{}, cfg.ClaudeArgs...)

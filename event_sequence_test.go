@@ -212,7 +212,7 @@ func TestEventSequences(t *testing.T) {
 			mock := newMockSlack()
 			defer mock.close()
 
-			thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithInstanceID("fox_face"))
+			thread := NewThread(mock.client(), "C_TEST", WithInstanceID("fox_face"))
 			thread.Resume("1700000001.000000")
 			turn := thread.NewTurn()
 

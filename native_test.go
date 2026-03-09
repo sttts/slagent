@@ -9,7 +9,7 @@ func TestNativeTurnTextStreaming(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.botClient(), "xoxb-test-token", "C_TEST", withAPIURL(mock.apiURL()))
+	thread := NewThread(mock.botClient(), "C_TEST", withAPIURL(mock.apiURL()))
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -53,7 +53,7 @@ func TestNativeTurnBufferThreshold(t *testing.T) {
 	defer mock.close()
 
 	// Small buffer size to trigger mid-stream flush
-	thread := NewThread(mock.botClient(), "xoxb-test-token", "C_TEST",
+	thread := NewThread(mock.botClient(), "C_TEST",
 		withAPIURL(mock.apiURL()),
 		WithBufferSize(10),
 	)
@@ -77,7 +77,7 @@ func TestNativeTurnThinkingAccumulation(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.botClient(), "xoxb-test-token", "C_TEST", withAPIURL(mock.apiURL()))
+	thread := NewThread(mock.botClient(), "C_TEST", withAPIURL(mock.apiURL()))
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -109,7 +109,7 @@ func TestNativeTurnToolStatusMapping(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.botClient(), "xoxb-test-token", "C_TEST", withAPIURL(mock.apiURL()))
+	thread := NewThread(mock.botClient(), "C_TEST", withAPIURL(mock.apiURL()))
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -148,7 +148,7 @@ func TestNativeTurnLazyStart(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.botClient(), "xoxb-test-token", "C_TEST", withAPIURL(mock.apiURL()))
+	thread := NewThread(mock.botClient(), "C_TEST", withAPIURL(mock.apiURL()))
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -172,7 +172,7 @@ func TestNativeTurnStatus(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.botClient(), "xoxb-test-token", "C_TEST", withAPIURL(mock.apiURL()))
+	thread := NewThread(mock.botClient(), "C_TEST", withAPIURL(mock.apiURL()))
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()

@@ -15,86 +15,34 @@ import (
 
 	slackapi "github.com/slack-go/slack"
 
-	"github.com/sttts/slagent/credential"
+	slackclient "github.com/sttts/slagent/client"
 )
 
-// Client wraps the Slack API for credential-based channel and user resolution.
+// Client wraps an authenticated Slack client for channel and user resolution.
 type Client struct {
-	api        *slackapi.Client
-	httpClient *http.Client
-	token      string
-	cookie     string
-	userCache  map[string]string
-	mu         sync.Mutex
-
-	// Token type and identity
-	tokenType string // "bot", "user", or "session"
+	slack     *slackclient.Client
+	userCache map[string]string
+	mu        sync.Mutex
 	ownUserID string // set via auth.test for user/session tokens
 }
 
-// cookieHTTPClient wraps http.Client and injects the d= cookie on every request.
-type cookieHTTPClient struct {
-	inner  *http.Client
-	cookie string
-}
-
-func (c *cookieHTTPClient) Do(req *http.Request) (*http.Response, error) {
-	req.Header.Set("Cookie", fmt.Sprintf("d=%s", c.cookie))
-	return c.inner.Do(req)
-}
-
-// Builder configures a channel Client.
-type Builder struct {
-	workspace string
-}
-
-// New returns a Builder for creating a channel Client.
-func New() *Builder {
-	return &Builder{}
-}
-
-// WithWorkspace selects a specific workspace. Empty uses the default.
-func (b *Builder) WithWorkspace(ws string) *Builder {
-	b.workspace = ws
-	return b
-}
-
-// Build creates the Client from stored credentials.
-func (b *Builder) Build() (*Client, error) {
-	creds, err := credential.Load(b.workspace)
-	if err != nil {
-		return nil, err
-	}
-	token := creds.EffectiveToken()
-	tokenType := creds.EffectiveType()
-
-	// Build slack client options, inject cookie for session tokens
-	httpClient := &http.Client{}
-	var opts []slackapi.Option
-	if creds.Cookie != "" {
-		opts = append(opts, slackapi.OptionHTTPClient(
-			&cookieHTTPClient{inner: httpClient, cookie: creds.Cookie},
-		))
-	}
-
-	c := &Client{
-		api:        slackapi.New(token, opts...),
-		httpClient: httpClient,
-		token:      token,
-		cookie:     creds.Cookie,
-		userCache:  make(map[string]string),
-		tokenType:  tokenType,
+// New creates a channel Client from an authenticated Slack client.
+func New(c *slackclient.Client) (*Client, error) {
+	ch := &Client{
+		slack:     c,
+		userCache: make(map[string]string),
 	}
 
 	// For user/session tokens, resolve own user ID via auth.test
-	if tokenType == "user" || tokenType == "session" {
-		resp, err := c.api.AuthTest()
+	token := c.Token()
+	if strings.HasPrefix(token, "xoxc-") || strings.HasPrefix(token, "xoxp-") {
+		resp, err := c.AuthTest()
 		if err != nil {
 			return nil, fmt.Errorf("auth.test: %w", err)
 		}
-		c.ownUserID = resp.UserID
+		ch.ownUserID = resp.UserID
 	}
-	return c, nil
+	return ch, nil
 }
 
 // ResolveChannelByName looks up a channel by name and returns its ID.
@@ -106,7 +54,7 @@ func (c *Client) ResolveChannelByName(name string) (string, error) {
 		Limit: 200,
 	}
 	for {
-		convs, cursor, err := c.api.GetConversationsForUser(params)
+		convs, cursor, err := c.slack.GetConversationsForUser(params)
 		if err != nil {
 			return "", fmt.Errorf("list channels: %w", err)
 		}
@@ -137,7 +85,7 @@ func (c *Client) ResolveUserChannel(names ...string) (string, error) {
 	}
 
 	// Open DM (1 user) or group DM (multiple users)
-	ch, _, _, err := c.api.OpenConversation(&slackapi.OpenConversationParameters{
+	ch, _, _, err := c.slack.OpenConversation(&slackapi.OpenConversationParameters{
 		Users: userIDs,
 	})
 	if err != nil {
@@ -176,12 +124,8 @@ func (c *Client) searchUser(query string) (string, error) {
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Authorization", "Bearer "+c.token)
-	if c.cookie != "" {
-		req.Header.Set("Cookie", fmt.Sprintf("d=%s", c.cookie))
-	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.slack.HTTPDo(req)
 	if err != nil {
 		return "", err
 	}
@@ -252,7 +196,7 @@ func (c *Client) ListChannels(progress func(ListProgress)) ([]Channel, error) {
 	var result []Channel
 	var dmsToCheck []candidate
 	for {
-		convs, cursor, err := c.api.GetConversationsForUser(params)
+		convs, cursor, err := c.slack.GetConversationsForUser(params)
 		if err != nil {
 			return nil, fmt.Errorf("get conversations: %w", err)
 		}
@@ -290,7 +234,7 @@ func (c *Client) ListChannels(progress func(ListProgress)) ([]Channel, error) {
 			sem <- struct{}{}
 			go func(cand candidate) {
 				defer func() { <-sem }()
-				hist, err := c.api.GetConversationHistory(&slackapi.GetConversationHistoryParameters{
+				hist, err := c.slack.GetConversationHistory(&slackapi.GetConversationHistoryParameters{
 					ChannelID: cand.id,
 					Limit:     1,
 				})
@@ -361,7 +305,7 @@ func (c *Client) resolveUser(userID string) string {
 	}
 	c.mu.Unlock()
 
-	info, err := c.api.GetUserInfo(userID)
+	info, err := c.slack.GetUserInfo(userID)
 	if err != nil {
 		return userID
 	}

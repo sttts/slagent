@@ -10,7 +10,7 @@ func TestCompatTurnTextStreaming(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -39,7 +39,7 @@ func TestCompatTurnThinkingNotDeleted(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -71,7 +71,7 @@ func TestCompatTurnUnifiedActivity(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -105,7 +105,7 @@ func TestCompatTurnToolIcons(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -127,7 +127,7 @@ func TestCompatTurnToolError(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -149,7 +149,7 @@ func TestCompatTurnEmptyFinish(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Resume("1700000001.000000")
 
 	// Finish with no content should not error
@@ -164,7 +164,7 @@ func TestCompatActivityMaxLines(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -190,7 +190,7 @@ func TestCompatFinishUpdatesTextMessage(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -219,7 +219,7 @@ func TestCompatTextFlushedBeforeTool(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -258,7 +258,7 @@ func TestCompatTextFlushedBeforeThinking(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -294,7 +294,7 @@ func TestCompatTextHasInlineEmojiPrefix(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithInstanceID("dog"))
+	thread := NewThread(mock.client(), "C_TEST", WithInstanceID("dog"))
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -331,7 +331,7 @@ func TestCompatTextMarkdownConverted(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -365,7 +365,7 @@ func TestCompatToolSingleIcon(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -391,7 +391,7 @@ func TestCompatToolDoneUpdatesInPlace(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -425,7 +425,7 @@ func TestCompatToolSequenceNoDoubleIcons(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -462,7 +462,7 @@ func TestCompatTextDebounceFlushed(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -502,7 +502,7 @@ func TestCompatActivityDebounceFlushed(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -547,7 +547,7 @@ func TestCompatMarkQuestionReplacesTrailingQuestionMark(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithInstanceID("cat"))
+	thread := NewThread(mock.client(), "C_TEST", WithInstanceID("cat"))
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -588,7 +588,7 @@ func TestCompatMarkQuestionAppendsWhenNoQuestionMark(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -620,7 +620,7 @@ func TestCompatNoMarkQuestionKeepsQuestionMark(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Resume("1700000001.000000")
 
 	// Regular turn (not a question) — should NOT modify trailing ?
@@ -655,7 +655,7 @@ func TestCompatMarkQuestionMultipleQuestionMarks(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -690,7 +690,7 @@ func TestCompatActivityDeletedWhenTextFollows(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -736,7 +736,7 @@ func TestCompatActivityPersistsWithoutText(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Resume("1700000001.000000")
 
 	// Tool-only turn (no text follows)
@@ -769,7 +769,7 @@ func TestCompatActivityNotRecreatedAfterDeletion(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -794,7 +794,7 @@ func TestCompatNewToolAfterTextStartsFreshActivity(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -829,7 +829,7 @@ func TestCompatThinkingThenTextDeletesActivity(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -849,7 +849,7 @@ func TestCompatFinishFullText(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -887,7 +887,7 @@ func TestCompatThinkingShowsIdentityEmoji(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithInstanceID("dog"))
+	thread := NewThread(mock.client(), "C_TEST", WithInstanceID("dog"))
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -913,7 +913,7 @@ func TestCompatEarlyThinkingDeletedOnFinish(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Resume("1700000001.000000")
 
 	// Simulate early thinking: whitespace-only thinking, no text, no tools
@@ -934,7 +934,7 @@ func TestCompatEarlyThinkingReplacedByRealThinking(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithInstanceID("fox_face"))
+	thread := NewThread(mock.client(), "C_TEST", WithInstanceID("fox_face"))
 	thread.Resume("1700000001.000000")
 
 	turn := thread.NewTurn()
@@ -964,7 +964,7 @@ func TestCompatEarlyThinkingThenTextDeletesActivity(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Resume("1700000001.000000")
 
 	// Early thinking → real thinking → text
@@ -998,7 +998,7 @@ func TestCompatEarlyThinkingThenToolPersists(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Resume("1700000001.000000")
 
 	// Early thinking → tool (no text) → finish
@@ -1025,7 +1025,7 @@ func TestCompatWhitespaceOnlyThinkingNoActivity(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Resume("1700000001.000000")
 
 	// Only whitespace thinking, nothing else — should clean up

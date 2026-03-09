@@ -12,6 +12,7 @@ import (
 
 	"github.com/sttts/slagent"
 	"github.com/sttts/slagent/channel"
+	slackclient "github.com/sttts/slagent/client"
 	"github.com/sttts/slagent/cmd/slaude/internal/perms"
 	"github.com/sttts/slagent/cmd/slaude/internal/session"
 	"github.com/sttts/slagent/credential"
@@ -106,9 +107,14 @@ func (cmd *StartCmd) Run() error {
 		ClaudeArgs: cmd.ClaudeArgs,
 	}
 
+	// Ensure credentials exist before any Slack API call
+	if err := credential.Ensure(cfg.Workspace, interactiveAuth); err != nil {
+		return err
+	}
+
 	// Resolve --channel name or --user(s) to a channel ID
 	if len(cmd.User) > 0 || (cfg.Channel != "" && !isSlackID(cfg.Channel)) {
-		client, err := channel.New().WithWorkspace(cfg.Workspace).Build()
+		client, err := newChannelClient(cfg.Workspace)
 		if err != nil {
 			return err
 		}
@@ -135,11 +141,8 @@ func (cmd *StartCmd) Run() error {
 		}
 	}
 
-	// If no channel given, ensure credentials exist then prompt with channel list
+	// If no channel given, prompt with channel list
 	if cfg.Channel == "" {
-		if err := credential.Ensure(cfg.Workspace, interactiveAuth); err != nil {
-			return err
-		}
 		cfg.Channel, cfg.ChannelName = promptChannel(cfg.Workspace)
 	}
 
@@ -158,6 +161,10 @@ func (cmd *JoinCmd) Run() error {
 	ch, threadTS, _, _ := parseThreadURL(cmd.URL)
 	if ch == "" || threadTS == "" {
 		return fmt.Errorf("invalid thread URL: %s", cmd.URL)
+	}
+
+	if err := credential.Ensure(cli.Workspace, interactiveAuth); err != nil {
+		return err
 	}
 
 	cfg := session.Config{
@@ -181,6 +188,10 @@ func (cmd *ResumeCmd) Run() error {
 	}
 	if instanceID == "" {
 		return fmt.Errorf("missing instance ID in URL (expected URL#instanceID)")
+	}
+
+	if err := credential.Ensure(cli.Workspace, interactiveAuth); err != nil {
+		return err
 	}
 
 	cfg := session.Config{
@@ -259,7 +270,11 @@ func (cmd *DefaultCmd) Run() error {
 type ChannelsCmd struct{}
 
 func (cmd *ChannelsCmd) Run() error {
-	client, err := channel.New().WithWorkspace(cli.Workspace).Build()
+	if err := credential.Ensure(cli.Workspace, interactiveAuth); err != nil {
+		return err
+	}
+
+	client, err := newChannelClient(cli.Workspace)
 	if err != nil {
 		return err
 	}
@@ -292,6 +307,10 @@ func (cmd *ShareCmd) Run() error {
 		return fmt.Errorf("reading %s: %w", cmd.File, err)
 	}
 
+	if err := credential.Ensure(cli.Workspace, interactiveAuth); err != nil {
+		return err
+	}
+
 	// Load credentials
 	creds, err := credential.Load(cli.Workspace)
 	if err != nil {
@@ -301,7 +320,7 @@ func (cmd *ShareCmd) Run() error {
 	// Resolve channel name if needed
 	ch := cmd.Channel
 	if !isSlackID(ch) {
-		resolver, err := channel.New().WithWorkspace(cli.Workspace).Build()
+		resolver, err := newChannelClient(cli.Workspace)
 		if err != nil {
 			return err
 		}
@@ -312,8 +331,8 @@ func (cmd *ShareCmd) Run() error {
 	}
 
 	// Use slagent for thread creation and posting
-	client := slagent.NewSlackClient(creds.EffectiveToken(), creds.Cookie)
-	thread := slagent.NewThread(client, creds.EffectiveToken(), ch)
+	client := slackclient.New(creds.EffectiveToken(), creds.Cookie)
+	thread := slagent.NewThread(client, ch)
 
 	topic := fmt.Sprintf("Plan review: %s", cmd.File)
 	url, err := thread.Start(topic)
@@ -433,6 +452,28 @@ func main() {
 	}
 }
 
+// newChannelClient creates a channel client, retrying with re-auth on token errors.
+func newChannelClient(workspace string) (*channel.Client, error) {
+	creds, err := credential.Load(workspace)
+	if err != nil {
+		return nil, err
+	}
+	sc := slackclient.New(creds.EffectiveToken(), creds.Cookie)
+	ch, err := channel.New(sc)
+	if credential.IsAuthError(err) {
+		if rerr := interactiveReauth(); rerr != nil {
+			return nil, rerr
+		}
+		creds, err = credential.Load(workspace)
+		if err != nil {
+			return nil, err
+		}
+		sc = slackclient.New(creds.EffectiveToken(), creds.Cookie)
+		ch, err = channel.New(sc)
+	}
+	return ch, err
+}
+
 // interactiveAuth runs credential extraction with user-facing output.
 func interactiveAuth() error {
 	fmt.Println("No Slack credentials found. Let's set them up.")
@@ -459,13 +500,7 @@ func interactiveReauth() error {
 // promptChannel lists channels and lets the user pick one, or type @username for a DM.
 // Returns (channelID, displayName).
 func promptChannel(workspace string) (string, string) {
-	client, err := channel.New().WithWorkspace(workspace).Build()
-	if credential.IsAuthError(err) {
-		if interactiveReauth() != nil {
-			return "", ""
-		}
-		client, err = channel.New().WithWorkspace(workspace).Build()
-	}
+	client, err := newChannelClient(workspace)
 	if err != nil {
 		return "", ""
 	}
@@ -478,7 +513,7 @@ func promptChannel(workspace string) (string, string) {
 		if interactiveReauth() != nil {
 			return "", ""
 		}
-		client, err = channel.New().WithWorkspace(workspace).Build()
+		client, err = newChannelClient(workspace)
 		if err != nil {
 			return "", ""
 		}

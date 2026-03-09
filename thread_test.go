@@ -51,7 +51,7 @@ func TestThreadPermissions(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithOwner("U_OWNER"))
+	thread := NewThread(mock.client(), "C_TEST", WithOwner("U_OWNER"))
 
 	// Owner is authorized
 	if !thread.isAuthorized("U_OWNER") {
@@ -91,7 +91,7 @@ func TestOpenForSpecificUsers(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithOwner("U_OWNER"))
+	thread := NewThread(mock.client(), "C_TEST", WithOwner("U_OWNER"))
 
 	// By default, only owner is authorized
 	if thread.isAuthorized("U_ALICE") {
@@ -130,7 +130,7 @@ func TestOpenMultipleUsersAtOnce(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithOwner("U_OWNER"))
+	thread := NewThread(mock.client(), "C_TEST", WithOwner("U_OWNER"))
 
 	// /open <@U_ALICE> <@U_BOB> — allow both at once
 	thread.handleCommand("U_OWNER", "/open <@U_ALICE> <@U_BOB>")
@@ -149,7 +149,7 @@ func TestLockSpecificUser(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithOwner("U_OWNER"))
+	thread := NewThread(mock.client(), "C_TEST", WithOwner("U_OWNER"))
 
 	// Open for everyone first
 	thread.handleCommand("U_OWNER", "/open")
@@ -177,7 +177,7 @@ func TestLockMultipleUsers(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithOwner("U_OWNER"))
+	thread := NewThread(mock.client(), "C_TEST", WithOwner("U_OWNER"))
 	thread.handleCommand("U_OWNER", "/open")
 
 	// /lock <@U_ALICE> <@U_BOB> — ban both
@@ -197,7 +197,7 @@ func TestOpenUnbansBannedUser(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithOwner("U_OWNER"))
+	thread := NewThread(mock.client(), "C_TEST", WithOwner("U_OWNER"))
 	thread.handleCommand("U_OWNER", "/open")
 	thread.handleCommand("U_OWNER", "/lock <@U_ALICE>")
 	if thread.isAuthorized("U_ALICE") {
@@ -215,7 +215,7 @@ func TestLockRemovesFromAllowed(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithOwner("U_OWNER"))
+	thread := NewThread(mock.client(), "C_TEST", WithOwner("U_OWNER"))
 
 	// Allow alice specifically
 	thread.handleCommand("U_OWNER", "/open <@U_ALICE>")
@@ -284,7 +284,7 @@ func TestFormatTitle(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			th := NewThread(mock.client(), "xoxc-test", "C_TEST",
+			th := NewThread(mock.client(), "C_TEST",
 				WithOwner("U_OWNER"),
 				WithInstanceID("fox_face"),
 			)
@@ -347,7 +347,7 @@ func TestParseTitle(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			th := NewThread(mock.client(), "xoxc-test", "C_TEST",
+			th := NewThread(mock.client(), "C_TEST",
 				WithInstanceID("fox_face"),
 			)
 			th.parseTitle(tt.text)
@@ -377,7 +377,7 @@ func TestParseTitleRoundtrip(t *testing.T) {
 	defer mock.close()
 
 	// Build a thread with allowed + banned users, format title, parse it back
-	th := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	th := NewThread(mock.client(), "C_TEST",
 		WithOwner("U_OWNER"),
 		WithInstanceID("fox_face"),
 	)
@@ -388,7 +388,7 @@ func TestParseTitleRoundtrip(t *testing.T) {
 	label := th.formatTitle()
 
 	// Parse into a fresh thread
-	th2 := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	th2 := NewThread(mock.client(), "C_TEST",
 		WithInstanceID("fox_face"),
 	)
 	th2.parseTitle(label)
@@ -411,7 +411,7 @@ func TestThreadTitleUpdatedOnAccessChange(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithOwner("U_OWNER"),
 		WithInstanceID("fox_face"),
 	)
@@ -441,7 +441,7 @@ func TestHandleCommandUnknownCommand(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithOwner("U_OWNER"))
+	thread := NewThread(mock.client(), "C_TEST", WithOwner("U_OWNER"))
 	if handled, _ := thread.handleCommand("U_OWNER", "/unknown"); handled {
 		t.Error("/unknown should not be handled")
 	}
@@ -454,7 +454,7 @@ func TestHandleCommandNonOwnerBlocked(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithOwner("U_OWNER"))
+	thread := NewThread(mock.client(), "C_TEST", WithOwner("U_OWNER"))
 
 	// Non-owner commands are handled (recognized) but denied with feedback
 	for _, cmd := range []string{"/open", "/lock", "/open <@U_ALICE>", "/lock <@U_ALICE>"} {
@@ -472,7 +472,7 @@ func TestCommandFeedback(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithOwner("U_OWNER"),
 		WithInstanceID("fox_face"),
 	)
@@ -500,7 +500,7 @@ func TestCommandFeedbackPostedToSlack(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithOwner("U_OWNER"),
 		WithInstanceID("fox_face"),
 	)
@@ -534,7 +534,7 @@ func TestUnauthorizedMessageFeedback(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithOwner("U_OWNER"),
 		WithInstanceID("fox_face"),
 	)
@@ -565,7 +565,7 @@ func TestHelpCommand(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithOwner("U_OWNER"),
 		WithInstanceID("fox_face"),
 	)
@@ -594,7 +594,7 @@ func TestBareHelpMessage(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithOwner("U_OWNER"),
 		WithInstanceID("fox_face"),
 	)
@@ -669,7 +669,7 @@ func TestMistargetedFeedbackPosted(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithOwner("U_OWNER"),
 		WithInstanceID("fox_face"),
 	)
@@ -723,7 +723,7 @@ func TestNonOwnerCannotSendCommands(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithOwner("U_OWNER"),
 		WithInstanceID("fox_face"),
 	)
@@ -762,7 +762,7 @@ func TestNonOwnerCommandAfterOpen(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithOwner("U_OWNER"),
 		WithInstanceID("fox_face"),
 	)
@@ -791,7 +791,7 @@ func TestCloseIsAliasForLock(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithOwner("U_OWNER"))
+	thread := NewThread(mock.client(), "C_TEST", WithOwner("U_OWNER"))
 	thread.handleCommand("U_OWNER", "/open <@U_ALICE>")
 	if !thread.isAuthorized("U_ALICE") {
 		t.Error("alice should be authorized")
@@ -808,7 +808,7 @@ func TestThreadOpenAccess(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithOpenAccess())
+	thread := NewThread(mock.client(), "C_TEST", WithOpenAccess())
 	if !thread.isAuthorized("U_ANYONE") {
 		t.Error("anyone should be authorized with open access")
 	}
@@ -818,7 +818,7 @@ func TestThreadNoOwner(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	if !thread.isAuthorized("U_ANYONE") {
 		t.Error("anyone should be authorized with no owner set")
 	}
@@ -828,7 +828,7 @@ func TestThreadStartAndResume(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 
 	url, err := thread.Start("Test Plan")
 	if err != nil {
@@ -842,7 +842,7 @@ func TestThreadStartAndResume(t *testing.T) {
 	}
 
 	// Resume without cursor — advances lastTS to latest reply
-	thread2 := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread2 := NewThread(mock.client(), "C_TEST")
 	thread2.Resume("1700000001.000000")
 	if thread2.ThreadTS() != "1700000001.000000" {
 		t.Errorf("ThreadTS = %q after Resume, want 1700000001.000000", thread2.ThreadTS())
@@ -853,7 +853,7 @@ func TestThreadPost(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Start("Test")
 
 	_, err := thread.Post("hello from bot")
@@ -876,7 +876,7 @@ func TestThreadPostBlocks(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Start("Test")
 
 	section := slackapi.NewSectionBlock(
@@ -903,7 +903,7 @@ func TestThreadPostNoThread(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	// No Start or Resume — threadTS is empty
 
 	_, err := thread.Post("should fail")
@@ -921,7 +921,7 @@ func TestNewTurnSelectsCompat(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Resume("1700000001.000000")
 	turn := thread.NewTurn()
 	impl := turn.(*turnImpl)
@@ -934,7 +934,7 @@ func TestNewTurnSelectsNative(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.botClient(), "xoxb-test-token", "C_TEST", withAPIURL(mock.apiURL()))
+	thread := NewThread(mock.botClient(), "C_TEST", withAPIURL(mock.apiURL()))
 	thread.Resume("1700000001.000000")
 	turn := thread.NewTurn()
 	impl := turn.(*turnImpl)
@@ -947,7 +947,7 @@ func TestPollRepliesFiltering(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithOwner("U_OWNER"))
+	thread := NewThread(mock.client(), "C_TEST", WithOwner("U_OWNER"))
 	thread.Start("Test")
 	threadTS := thread.ThreadTS()
 
@@ -978,7 +978,7 @@ func TestPollRepliesOpenClose(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithOwner("U_OWNER"),
 		WithInstanceID("fox_face"),
 	)
@@ -1009,7 +1009,7 @@ func TestPollRepliesSkipsOwnMessages(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.Start("Test")
 	threadTS := thread.ThreadTS()
 
@@ -1037,7 +1037,7 @@ func TestPollRepliesSkipsStreamingMessages(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithInstanceID("aaaa"),
 	)
 	thread.Start("Test")
@@ -1060,7 +1060,7 @@ func TestPollRepliesDeliversFinalizedFromOtherInstance(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithInstanceID("aaaa"),
 	)
 	thread.Start("Test")
@@ -1085,7 +1085,7 @@ func TestPollRepliesSkipsFinalizedFromOwnInstance(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithInstanceID("aaaa"),
 	)
 	thread.Start("Test")
@@ -1107,7 +1107,7 @@ func TestPollRepliesSkipsActivityFromAllInstances(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithInstanceID("aaaa"),
 	)
 	thread.Start("Test")
@@ -1138,7 +1138,7 @@ func TestPollRepliesStreamingThenFinalizedSkipped(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithInstanceID("aaaa"),
 	)
 	thread.Start("Test")
@@ -1182,7 +1182,7 @@ func TestMultiInstanceVisibility(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithInstanceID("dog"),
 	)
 	thread.Start("Test")
@@ -1228,7 +1228,7 @@ func TestMultiInstanceAddressedToOther(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithInstanceID("dog"),
 	)
 	thread.Start("Test")
@@ -1267,7 +1267,7 @@ func TestMultiInstanceCommandsAreExclusive(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithInstanceID("dog"),
 	)
 	thread.Start("Test")
@@ -1295,7 +1295,7 @@ func TestMultiInstanceOtherFinalizedThenHuman(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithInstanceID("dog"),
 	)
 	thread.Start("Test")
@@ -1330,7 +1330,7 @@ func TestStopBare(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithInstanceID("dog"),
 	)
 	thread.Start("Test")
@@ -1357,7 +1357,7 @@ func TestStopCaseInsensitive(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithInstanceID("dog"),
 	)
 	thread.Start("Test")
@@ -1378,7 +1378,7 @@ func TestStopTargeted(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithInstanceID("dog"),
 	)
 	thread.Start("Test")
@@ -1406,7 +1406,7 @@ func TestStopWithSpaces(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithInstanceID("dog"),
 	)
 	thread.Start("Test")
@@ -1427,7 +1427,7 @@ func TestQuitByOwner(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithInstanceID("dog"),
 		WithOwner("U_OWNER"),
 	)
@@ -1452,7 +1452,7 @@ func TestQuitByNonOwnerDenied(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithInstanceID("dog"),
 		WithOwner("U_OWNER"),
 	)
@@ -1475,7 +1475,7 @@ func TestQuitTargeted(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithInstanceID("dog"),
 		WithOwner("U_OWNER"),
 	)
@@ -1504,7 +1504,7 @@ func TestRepliesBlockingWithCancel(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithPollInterval(50*time.Millisecond),
 	)
 	thread.Start("Test")
@@ -1523,7 +1523,7 @@ func TestRepliesBlockingWithTimeout(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithPollInterval(50*time.Millisecond),
 	)
 	thread.Start("Test")
@@ -1541,7 +1541,7 @@ func TestRepliesBlockingReturnsOnReply(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithPollInterval(50*time.Millisecond),
 	)
 	thread.Start("Test")
@@ -1635,7 +1635,7 @@ func TestPollRepliesEmojiPrefixTargeting(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithInstanceID("fox_face"),
 	)
 	thread.Start("Test")
@@ -1676,7 +1676,7 @@ func TestPollRepliesCommandOnlyForTargetInstance(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithInstanceID("fox_face"),
 	)
 	thread.Start("Test")
@@ -1705,7 +1705,7 @@ func TestPollRepliesEmojiPrefixCommand(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+	thread := NewThread(mock.client(), "C_TEST",
 		WithInstanceID("fox_face"),
 	)
 	thread.Start("Test")
@@ -1735,13 +1735,13 @@ func TestResumeWithAfterTS(t *testing.T) {
 	defer mock.close()
 
 	// Post a thread with replies
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithInstanceID("dog"), WithOwner("U_OWNER"))
+	thread := NewThread(mock.client(), "C_TEST", WithInstanceID("dog"), WithOwner("U_OWNER"))
 	thread.Start("Test Plan")
 	thread.Post("first reply")
 	thread.Post("second reply")
 
 	// Resume with explicit afterTS — should skip all messages up to that point
-	thread2 := NewThread(mock.client(), "xoxc-test", "C_TEST", WithInstanceID("dog"), WithOwner("U_OWNER"))
+	thread2 := NewThread(mock.client(), "C_TEST", WithInstanceID("dog"), WithOwner("U_OWNER"))
 	thread2.Resume(thread.ThreadTS(), "1700000099.000000")
 
 	if thread2.LastTS() != "1700000099.000000" {
@@ -1754,7 +1754,7 @@ func TestResumeWithoutAfterTSAdvancesToLatest(t *testing.T) {
 	defer mock.close()
 
 	// Post a thread with replies
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithInstanceID("dog"), WithOwner("U_OWNER"))
+	thread := NewThread(mock.client(), "C_TEST", WithInstanceID("dog"), WithOwner("U_OWNER"))
 	thread.Start("Test Plan")
 	thread.Post("first reply")
 	thread.Post("second reply")
@@ -1764,7 +1764,7 @@ func TestResumeWithoutAfterTSAdvancesToLatest(t *testing.T) {
 	latestTS := active[len(active)-1].TS
 
 	// Resume without afterTS — should advance to latest reply
-	thread2 := NewThread(mock.client(), "xoxc-test", "C_TEST", WithInstanceID("dog"), WithOwner("U_OWNER"))
+	thread2 := NewThread(mock.client(), "C_TEST", WithInstanceID("dog"), WithOwner("U_OWNER"))
 	thread2.Resume(thread.ThreadTS())
 
 	if thread2.LastTS() != latestTS {
@@ -1777,7 +1777,7 @@ func TestResumeWithAfterTSSkipsOldReplies(t *testing.T) {
 	defer mock.close()
 
 	// Post a thread with messages
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithInstanceID("dog"), WithOwner("U_OWNER"))
+	thread := NewThread(mock.client(), "C_TEST", WithInstanceID("dog"), WithOwner("U_OWNER"))
 	thread.Start("Test Plan")
 	threadTS := thread.ThreadTS()
 
@@ -1790,7 +1790,7 @@ func TestResumeWithAfterTSSkipsOldReplies(t *testing.T) {
 	lastOldTS := active[len(active)-1].TS
 
 	// Resume with afterTS set to last old message
-	thread2 := NewThread(mock.client(), "xoxc-test", "C_TEST", WithInstanceID("dog"), WithOwner("U_OWNER"))
+	thread2 := NewThread(mock.client(), "C_TEST", WithInstanceID("dog"), WithOwner("U_OWNER"))
 	thread2.Resume(threadTS, lastOldTS)
 
 	// Poll should return nothing (all messages are before afterTS)
@@ -1817,7 +1817,7 @@ func TestAdvanceLastTS(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST")
+	thread := NewThread(mock.client(), "C_TEST")
 	thread.lastTS = "1700000001.000000"
 
 	// Newer timestamp advances

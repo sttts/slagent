@@ -9,13 +9,9 @@ package slagent
 
 import (
 	"crypto/rand"
-	"fmt"
 	"io"
-	"net/http"
 	"sort"
 	"time"
-
-	slackapi "github.com/slack-go/slack"
 )
 
 // Tool status constants for use with Turn.Tool().
@@ -165,26 +161,3 @@ func WithSlackLog(w io.Writer) ThreadOption {
 	return func(c *threadConfig) { c.slackLog = w }
 }
 
-// NewSlackClient creates a *slack.Client with optional cookie support.
-func NewSlackClient(token, cookie string) *slackapi.Client {
-	if cookie != "" {
-		return slackapi.New(token, slackapi.OptionHTTPClient(
-			&cookieHTTPClient{cookie: cookie},
-		))
-	}
-	return slackapi.New(token)
-}
-
-// cookieHTTPClient wraps http.Client and injects the d= cookie on every request.
-type cookieHTTPClient struct {
-	inner  *http.Client
-	cookie string
-}
-
-func (c *cookieHTTPClient) Do(req *http.Request) (*http.Response, error) {
-	req.Header.Set("Cookie", fmt.Sprintf("d=%s", c.cookie))
-	if c.inner == nil {
-		return http.DefaultClient.Do(req)
-	}
-	return c.inner.Do(req)
-}

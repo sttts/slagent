@@ -10,6 +10,7 @@ import (
 
 	"github.com/sttts/slagent"
 	slackchan "github.com/sttts/slagent/channel"
+	slackclient "github.com/sttts/slagent/client"
 	"github.com/sttts/slagent/credential"
 )
 
@@ -48,22 +49,23 @@ func setupThread(channel string, users []string, resumeTS string) (*slagent.Thre
 	}
 
 	// Resolve channel/user
+	sc := slackclient.New(creds.EffectiveToken(), creds.Cookie)
 	ch := channel
 	if len(users) > 0 {
-		client, err := slackchan.New().Build()
+		resolver, err := slackchan.New(sc)
 		if err != nil {
 			return nil, err
 		}
-		ch, err = client.ResolveUserChannel(users...)
+		ch, err = resolver.ResolveUserChannel(users...)
 		if err != nil {
 			return nil, fmt.Errorf("resolving user: %w", err)
 		}
 	} else if ch != "" && !isSlackID(ch) {
-		client, err := slackchan.New().Build()
+		resolver, err := slackchan.New(sc)
 		if err != nil {
 			return nil, err
 		}
-		ch, err = client.ResolveChannelByName(strings.TrimPrefix(ch, "#"))
+		ch, err = resolver.ResolveChannelByName(strings.TrimPrefix(ch, "#"))
 		if err != nil {
 			return nil, fmt.Errorf("resolving channel: %w", err)
 		}
@@ -72,16 +74,14 @@ func setupThread(channel string, users []string, resumeTS string) (*slagent.Thre
 		return nil, fmt.Errorf("no channel specified (-c or -u required)")
 	}
 
-	slackClient := slagent.NewSlackClient(creds.EffectiveToken(), creds.Cookie)
-
 	// Resolve owner for interactive prompts
 	var opts []slagent.ThreadOption
-	resp, err := slackClient.AuthTest()
+	resp, err := sc.AuthTest()
 	if err == nil && resp.UserID != "" {
 		opts = append(opts, slagent.WithOwner(resp.UserID))
 	}
 
-	thread := slagent.NewThread(slackClient, creds.EffectiveToken(), ch, opts...)
+	thread := slagent.NewThread(sc, ch, opts...)
 
 	if resumeTS != "" {
 		thread.Resume(resumeTS)

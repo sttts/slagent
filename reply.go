@@ -64,7 +64,7 @@ func (t *Thread) pollOnce() ([]Reply, error) {
 		Timestamp: threadTS,
 		Oldest:    oldest,
 	}
-	msgs, _, _, err := t.api.GetConversationReplies(params)
+	msgs, _, _, err := t.client.GetConversationReplies(params)
 	if err != nil {
 		return nil, fmt.Errorf("get replies: %w", err)
 	}

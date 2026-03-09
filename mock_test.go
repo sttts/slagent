@@ -10,6 +10,8 @@ import (
 	"sync"
 
 	slackapi "github.com/slack-go/slack"
+
+	slackclient "github.com/sttts/slagent/client"
 )
 
 // mockSlack is a fake Slack API server for testing.
@@ -70,14 +72,14 @@ func (m *mockSlack) close() {
 	m.server.Close()
 }
 
-// client returns a slack-go client pointing at the mock server.
-func (m *mockSlack) client() *slackapi.Client {
-	return slackapi.New("xoxc-test-token", slackapi.OptionAPIURL(m.server.URL+"/api/"))
+// client returns a Client pointing at the mock server with a session token.
+func (m *mockSlack) client() *slackclient.Client {
+	return slackclient.New("xoxc-test-token", "", slackapi.OptionAPIURL(m.server.URL+"/api/"))
 }
 
-// botClient returns a slack-go client with a bot token.
-func (m *mockSlack) botClient() *slackapi.Client {
-	return slackapi.New("xoxb-test-token", slackapi.OptionAPIURL(m.server.URL+"/api/"))
+// botClient returns a Client with a bot token.
+func (m *mockSlack) botClient() *slackclient.Client {
+	return slackclient.New("xoxb-test-token", "", slackapi.OptionAPIURL(m.server.URL+"/api/"))
 }
 
 // apiURL returns the base API URL for native turn testing.
