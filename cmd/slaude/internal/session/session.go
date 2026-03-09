@@ -201,23 +201,28 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 				"Your messages appear prefixed with %s in Slack.\n\n"+
 				"Messages prefixed with [Team feedback from Slack] contain input from "+
 				"team members watching the thread.\n\n"+
-				"Instance targeting:\n"+
-				"- :%s:: (with colon after the emoji) explicitly addresses you. Act on these.\n"+
-				"- :other_emoji:: (a different instance's shortcode with colon) explicitly addresses "+
-				"another agent. SILENTLY ignore these — do not respond, do not acknowledge, "+
-				"do not say \"that message is for another instance\". Just produce no output at all.\n"+
-				"- :%s:: /command sends a slash command exclusively to you — other instances never see it.\n"+
-				"- %s without a trailing colon is ambiguous — it could be someone talking to you, "+
-				"or just a message mentioning you. Use context to decide whether to respond.\n"+
-				"- Messages without any emoji prefix are broadcast to all instances.\n\n"+
-				"Important behavior rules for Slack:\n"+
-				"- Do NOT acknowledge every message. Only respond when you have something substantive to say.\n"+
-				"- Messages from other agent instances (other slaude sessions in the same thread) "+
-				"should generally be ignored unless they are directly relevant to your task.\n"+
-				"- Be concise. Slack readers prefer short, focused responses over verbose ones.\n"+
+				"How messages appear in the thread:\n"+
+				"- Your messages are automatically prefixed with :%s: by the system.\n"+
+				"- Other agents' messages are prefixed with their emoji (e.g. :rhinoceros: text).\n"+
+				"- :emoji:: (emoji + colon, no space) = addressed TO that agent by a human or another agent.\n"+
+				"- :A: :B:: text = FROM agent A, addressed TO agent B.\n"+
+				"- :A: :B: text = FROM agent A, mentioning B (not addressed to B).\n\n"+
+				"Rules:\n"+
+				"- :%s:: (from a human) or :other_emoji: :%s:: (from another agent) addresses you. Act on these.\n"+
+				"- To address another agent, prefix your message with :their_emoji::.\n"+
+				"- :other_emoji:: (from a human) or :A: :other_emoji:: (from another agent) addresses another agent. "+
+				"You may read and absorb the content for context, but you MUST produce ZERO output. "+
+				"No text, no tool calls, no acknowledgment. Saying \"that's not for me\", \"staying quiet\", "+
+				"\"waiting\", or ANY commentary about not responding is itself a violation of this rule. "+
+				"Literally generate nothing.\n"+
+				"- :%s:: /command sends a slash command exclusively to you.\n"+
+				"- Messages without :emoji:: prefix are broadcast to all instances.\n\n"+
+				"Behavior rules:\n"+
+				"- Do NOT acknowledge every message. Only respond when you have something substantive.\n"+
+					"- Be concise. Slack readers prefer short, focused responses.\n"+
 				"- Do not greet or say hello in response to feedback. Just act on it."+
 				"%s",
-			emoji, instanceID, emoji, instanceID, instanceID, emoji, ownerCtx)
+			emoji, instanceID, emoji, instanceID, instanceID, instanceID, instanceID, ownerCtx)
 		if idx := findArg(extraArgs, "--system-prompt"); idx >= 0 && idx+1 < len(extraArgs) {
 			extraArgs[idx+1] += "\n\n" + slackCtx
 		} else {
@@ -301,8 +306,9 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 		Channel: channelDisplay,
 	}
 
-	// Build join command for the banner
+	// Build identity and join command for the banner
 	if sess.thread != nil {
+		bannerOpts.Identity = fmt.Sprintf("%s %s", sess.thread.Emoji(), sess.thread.InstanceID())
 		if u := sess.thread.URL(); u != "" {
 			bannerOpts.JoinCmd = fmt.Sprintf("slaude join %s", u)
 		}
