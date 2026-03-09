@@ -37,6 +37,7 @@ type StartCmd struct {
 	Open       bool     `help:"Start with thread open for all participants (default: locked to owner)."`
 	Topic      []string `arg:"" optional:"" help:"Planning topic."`
 	Debug      bool     `help:"Print raw JSON events from Claude to terminal."`
+	NoBye      bool     `help:"Don't post a goodbye message to Slack on exit."`
 	ClaudeArgs []string `name:"-" hidden:""`
 }
 
@@ -46,6 +47,7 @@ type JoinCmd struct {
 	Topic      []string `arg:"" optional:"" help:"Planning topic."`
 	Closed     bool     `help:"Start locked to owner only, ignoring thread access state."`
 	Debug      bool     `help:"Print raw JSON events from Claude to terminal."`
+	NoBye      bool     `help:"Don't post a goodbye message to Slack on exit."`
 	ClaudeArgs []string `name:"-" hidden:""`
 }
 
@@ -54,6 +56,7 @@ type ResumeCmd struct {
 	URL        string   `arg:"" help:"Slack thread URL with #instanceID fragment."`
 	Closed     bool     `help:"Start locked to owner only, ignoring thread access state."`
 	Debug      bool     `help:"Print raw JSON events from Claude to terminal."`
+	NoBye      bool     `help:"Don't post a goodbye message to Slack on exit."`
 	ClaudeArgs []string `name:"-" hidden:""`
 }
 
@@ -107,6 +110,7 @@ func (cmd *StartCmd) Run() error {
 		Channel:    cmd.Channel,
 		OpenAccess: cmd.Open,
 		Debug:      cmd.Debug,
+		NoBye:      cmd.NoBye,
 		Workspace:  cli.Workspace,
 		ClaudeArgs: cmd.ClaudeArgs,
 	}
@@ -189,6 +193,7 @@ func (cmd *JoinCmd) Run() error {
 		ResumeThreadTS: threadTS,
 		ClosedAccess:   cmd.Closed,
 		Debug:          cmd.Debug,
+		NoBye:          cmd.NoBye,
 		Workspace:      cli.Workspace,
 		ClaudeArgs:     cmd.ClaudeArgs,
 	}
@@ -217,6 +222,7 @@ func (cmd *ResumeCmd) Run() error {
 		InstanceID:     instanceID,
 		ClosedAccess:   cmd.Closed,
 		Debug:          cmd.Debug,
+		NoBye:          cmd.NoBye,
 		Workspace:      cli.Workspace,
 		ClaudeArgs:     cmd.ClaudeArgs,
 	}

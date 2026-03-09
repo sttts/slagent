@@ -34,6 +34,7 @@ type Config struct {
 	OpenAccess     bool     // start with thread open for all participants
 	ClosedAccess   bool     // override inherited access to locked (join/resume)
 	Debug          bool     // write raw JSON events to debug.log
+	NoBye          bool     // don't post goodbye message on exit
 	Workspace      string   // Slack workspace (empty = default)
 	ClaudeArgs     []string // pass-through args for Claude subprocess
 }
@@ -412,6 +413,9 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 	}
 
 	ui.Info("👋 Session ended.")
+	if !cfg.NoBye {
+		sess.thread.Post(fmt.Sprintf("%s 👋 Session ended.", sess.thread.Emoji()))
+	}
 
 	// Build resume info
 	resume := &ResumeInfo{
