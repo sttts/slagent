@@ -228,7 +228,8 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 				"Behavior rules:\n"+
 				"- Do NOT acknowledge every message. Only respond when you have something substantive.\n"+
 					"- Be concise. Slack readers prefer short, focused responses.\n"+
-				"- Do not greet or say hello in response to feedback. Just act on it."+
+				"- Do not greet or say hello in response to feedback. Just act on it.\n"+
+				"- When outputting tabular data with columns, always wrap it in a code block (```) so it renders with fixed-width alignment in Slack."+
 				"%s",
 			emoji, instanceID, emoji, instanceID, instanceID, instanceID, instanceID, ownerCtx)
 		if idx := findArg(extraArgs, "--system-prompt"); idx >= 0 && idx+1 < len(extraArgs) {
