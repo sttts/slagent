@@ -200,7 +200,7 @@ func runSession(cfg session.Config) error {
 		fmt.Println()
 		fmt.Println("🔄 To resume this session:")
 		if resume.ThreadURL != "" && resume.InstanceID != "" {
-			fmt.Printf("  slaude resume %s#%s -- --resume %s\n", resume.ThreadURL, resume.InstanceID, resume.SessionID)
+			fmt.Printf("  slaude resume '%s#%s' -- --resume %s\n", resume.ThreadURL, resume.InstanceID, resume.SessionID)
 		} else {
 			fmt.Printf("  slaude resume (thread URL unavailable) -- --resume %s\n", resume.SessionID)
 		}
