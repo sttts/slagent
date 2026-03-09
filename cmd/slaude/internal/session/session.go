@@ -312,13 +312,13 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 		channelDisplay = cfg.Channel
 	}
 	bannerOpts := terminal.BannerOpts{
-		Topic:   cfg.Topic,
 		Channel: channelDisplay,
 	}
 
 	// Build identity, access mode, and join command for the banner
 	if sess.thread != nil {
 		bannerOpts.Identity = fmt.Sprintf("%s %s", sess.thread.Emoji(), sess.thread.InstanceID())
+		bannerOpts.Header = sess.thread.Title()
 		bannerOpts.Access = sess.thread.AccessMode()
 		if u := sess.thread.URL(); u != "" {
 			bannerOpts.JoinCmd = fmt.Sprintf("slaude join %s", u)

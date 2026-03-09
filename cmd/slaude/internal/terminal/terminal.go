@@ -40,22 +40,24 @@ func NewWithWriter(w io.Writer) *UI {
 
 // BannerOpts configures the banner display.
 type BannerOpts struct {
-	Topic    string
-	Channel  string
+	Header   string // full header line (used on resume, e.g. "🐜🔒🧵 Testing")
 	Identity string // identity emoji + instance ID (e.g. "🐶 dog")
+	Topic    string // topic for new sessions
+	Channel  string
 	Access   string // access mode (e.g. "locked", "open")
 	JoinCmd  string // command to join this thread with a new slaude instance
 }
 
 // Banner prints the session start info.
 func (u *UI) Banner(opts BannerOpts) {
-	fmt.Fprintf(u.w, "\n%s%s🧵 slaude%s", bold, green, reset)
-	if opts.Topic != "" {
-		fmt.Fprintf(u.w, " — %s", opts.Topic)
-	}
-	fmt.Fprintln(u.w)
-	if opts.Identity != "" {
-		fmt.Fprintf(u.w, "%s  🏷️ Identity: %s%s\n", dim, opts.Identity, reset)
+	if opts.Header != "" {
+		fmt.Fprintf(u.w, "\n%s%s%s%s\n", bold, green, opts.Header, reset)
+	} else {
+		fmt.Fprintf(u.w, "\n%s%s%s 🧵%s", bold, green, opts.Identity, reset)
+		if opts.Topic != "" {
+			fmt.Fprintf(u.w, " %s", opts.Topic)
+		}
+		fmt.Fprintln(u.w)
 	}
 	if opts.Channel != "" {
 		fmt.Fprintf(u.w, "%s  💬 Channel:  %s%s\n", dim, opts.Channel, reset)

@@ -119,7 +119,8 @@ type Thread struct {
 	openAccess   bool
 	allowedUsers map[string]bool // specific users allowed when not fully open
 	bannedUsers  map[string]bool // explicitly banned users (override openAccess)
-	title        string         // thread title (for access state in parent message)
+	topic string // parsed topic text (without emojis/mentions)
+	title string // full thread message with shortcodes → Unicode
 	joined       bool           // true if joined/resumed (don't persist access to title)
 
 	// Reply tracking
@@ -160,14 +161,12 @@ func NewThread(c *client.Client, channel string, opts ...ThreadOption) *Thread {
 }
 
 // Start posts the initial thread message and returns the thread URL.
+// Must be called before any concurrent access to the thread.
 func (t *Thread) Start(title string) (string, error) {
 	if title == "" {
 		title = "Agent session"
 	}
-
-	t.mu.Lock()
-	t.title = title
-	t.mu.Unlock()
+	t.topic = title
 
 	label := t.formatTitle()
 
@@ -181,10 +180,8 @@ func (t *Thread) Start(title string) (string, error) {
 		return "", fmt.Errorf("post thread parent: %w", err)
 	}
 
-	t.mu.Lock()
 	t.threadTS = ts
 	t.lastTS = ts
-	t.mu.Unlock()
 
 	link, err := t.client.GetPermalink(&slackapi.PermalinkParameters{
 		Channel: t.channel,
@@ -552,10 +549,16 @@ func (t *Thread) resolveUser(userID string) string {
 //	Open for all:              ":instanceID:🧵 Topic"
 //	Selective (allowed users): ":instanceID:🧵 <@U1> <@U2> Topic"
 //	With bans (appended):      "... (🔒 <@U3>)"
+// formatTitle builds the thread parent label reflecting access state.
 func (t *Thread) formatTitle() string {
 	t.mu.Lock()
-	title := t.title
-	open := t.openAccess
+	defer t.mu.Unlock()
+
+	title := t.topic
+	if title == "" {
+		title = "Agent session"
+	}
+
 	allowed := make([]string, 0, len(t.allowedUsers))
 	for u := range t.allowedUsers {
 		allowed = append(allowed, u)
@@ -564,20 +567,14 @@ func (t *Thread) formatTitle() string {
 	for u := range t.bannedUsers {
 		banned = append(banned, u)
 	}
-	t.mu.Unlock()
-
 	sort.Strings(allowed)
 	sort.Strings(banned)
 
-	if title == "" {
-		title = "Agent session"
-	}
-
 	// 🔒 only when locked to owner (no allowed users)
 	var label string
-	if !open && len(allowed) == 0 {
+	if !t.openAccess && len(allowed) == 0 {
 		label = fmt.Sprintf(":%s:🔒🧵 %s", t.instanceID, title)
-	} else if !open && len(allowed) > 0 {
+	} else if !t.openAccess && len(allowed) > 0 {
 		// Selective: mentions before topic text
 		var mentions []string
 		for _, u := range allowed {
@@ -596,10 +593,27 @@ func (t *Thread) formatTitle() string {
 		}
 		label += fmt.Sprintf(" (🔒 %s)", strings.Join(mentions, " "))
 	}
+
+	t.title = label
 	return label
 }
 
+// Title returns the full thread title with shortcodes converted to Unicode.
+func (t *Thread) Title() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.title
+}
+
+// Topic returns the parsed topic text (without emojis, mentions, access markers).
+func (t *Thread) Topic() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.topic
+}
+
 // parseTitle recovers access state from a thread parent message.
+// Handles both Unicode (🔒🧵) and Slack shortcode (:lock::thread:) formats.
 func (t *Thread) parseTitle(text string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -607,22 +621,32 @@ func (t *Thread) parseTitle(text string) {
 	t.allowedUsers = make(map[string]bool)
 	t.bannedUsers = make(map[string]bool)
 
+	// Normalize shortcodes to Unicode for consistent parsing
+	text = strings.ReplaceAll(text, ":lock:", "🔒")
+	text = strings.ReplaceAll(text, ":thread:", "🧵")
+
+	// Convert identity emoji shortcodes (e.g. :ant: → 🐜)
+	for shortcode, emoji := range identityEmojis {
+		text = strings.ReplaceAll(text, ":"+shortcode+":", emoji)
+	}
+	t.title = text
+
 	// 🔒🧵 means locked to owner; plain 🧵 means open or selective
 	locked := strings.Contains(text, "🔒🧵")
 
 	// Extract content after 🧵 (with optional space)
 	if idx := strings.Index(text, "🧵 "); idx >= 0 {
-		t.title = text[idx+len("🧵 "):]
+		t.topic = text[idx+len("🧵 "):]
 	} else if idx := strings.Index(text, "🧵"); idx >= 0 {
-		t.title = text[idx+len("🧵"):]
+		t.topic = text[idx+len("🧵"):]
 	}
 
 	// Parse "(🔒 <@U3>)" — banned users (strip from title)
-	if idx := strings.Index(t.title, " (🔒 "); idx >= 0 {
-		end := strings.Index(t.title[idx:], ")")
+	if idx := strings.Index(t.topic, " (🔒 "); idx >= 0 {
+		end := strings.Index(t.topic[idx:], ")")
 		if end >= 0 {
-			extractMentions(t.title[idx:idx+end+1], t.bannedUsers)
-			t.title = strings.TrimSpace(t.title[:idx] + t.title[idx+end+1:])
+			extractMentions(t.topic[idx:idx+end+1], t.bannedUsers)
+			t.topic = strings.TrimSpace(t.topic[:idx] + t.topic[idx+end+1:])
 		}
 	}
 
@@ -632,14 +656,14 @@ func (t *Thread) parseTitle(text string) {
 	}
 
 	// Not locked: parse leading <@...> mentions as allowed users
-	for strings.HasPrefix(t.title, "<@") {
-		end := strings.Index(t.title, ">")
+	for strings.HasPrefix(t.topic, "<@") {
+		end := strings.Index(t.topic, ">")
 		if end < 0 {
 			break
 		}
-		uid := t.title[2:end]
+		uid := t.topic[2:end]
 		t.allowedUsers[uid] = true
-		t.title = strings.TrimLeft(t.title[end+1:], " ")
+		t.topic = strings.TrimLeft(t.topic[end+1:], " ")
 	}
 
 	// If we found allowed users → selective (not fully open)

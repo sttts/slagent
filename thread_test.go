@@ -288,7 +288,7 @@ func TestFormatTitle(t *testing.T) {
 				WithOwner("U_OWNER"),
 				WithInstanceID("fox_face"),
 			)
-			th.title = "Test Topic"
+			th.topic = "Test Topic"
 			tt.setup(th)
 			got := th.formatTitle()
 			if got != tt.want {
@@ -344,6 +344,25 @@ func TestParseTitle(t *testing.T) {
 			wantAllowed: []string{"U_ALICE"},
 			wantBanned:  []string{"U_EVIL"},
 		},
+		{
+			name:      "locked shortcodes",
+			text:      ":fox_face::lock::thread: My Topic",
+			wantTitle: "My Topic",
+			wantOpen:  false,
+		},
+		{
+			name:      "open shortcodes",
+			text:      ":fox_face::thread: My Topic",
+			wantTitle: "My Topic",
+			wantOpen:  true,
+		},
+		{
+			name:       "banned shortcodes",
+			text:       ":fox_face::thread: My Topic (:lock: <@U_EVIL>)",
+			wantTitle:  "My Topic",
+			wantOpen:   true,
+			wantBanned: []string{"U_EVIL"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -352,8 +371,8 @@ func TestParseTitle(t *testing.T) {
 			)
 			th.parseTitle(tt.text)
 
-			if th.title != tt.wantTitle {
-				t.Errorf("title = %q, want %q", th.title, tt.wantTitle)
+			if th.topic != tt.wantTitle {
+				t.Errorf("title = %q, want %q", th.topic, tt.wantTitle)
 			}
 			if th.openAccess != tt.wantOpen {
 				t.Errorf("openAccess = %v, want %v", th.openAccess, tt.wantOpen)
@@ -381,7 +400,7 @@ func TestParseTitleRoundtrip(t *testing.T) {
 		WithOwner("U_OWNER"),
 		WithInstanceID("fox_face"),
 	)
-	th.title = "Design API"
+	th.topic = "Design API"
 	th.handleCommand("U_OWNER", "/open <@U_ALICE> <@U_BOB>")
 	th.handleCommand("U_OWNER", "/lock <@U_EVIL>")
 
@@ -393,8 +412,8 @@ func TestParseTitleRoundtrip(t *testing.T) {
 	)
 	th2.parseTitle(label)
 
-	if th2.title != "Design API" {
-		t.Errorf("roundtrip title = %q, want %q", th2.title, "Design API")
+	if th2.topic != "Design API" {
+		t.Errorf("roundtrip title = %q, want %q", th2.topic, "Design API")
 	}
 	if th2.openAccess != false {
 		t.Error("roundtrip openAccess should be false")
