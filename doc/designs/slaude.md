@@ -331,6 +331,39 @@ The system prompt tells Claude about the `:shortcode::` convention:
 messages with its own emoji should be acted on, messages with another
 instance's emoji should generally be ignored.
 
+## Thread Access Control
+
+Thread access is managed through `/open` and `/lock` commands via emoji-prefix
+targeting (`:shortcode:: /open`). Access state is reflected in the thread title.
+
+### Commands
+
+| Command | Effect |
+|---------|--------|
+| `/open` | Open for everyone |
+| `/open <@U1> <@U2>` | Allow specific users (additive) |
+| `/lock` | Lock to owner only (clears all) |
+| `/lock <@U1>` | Ban specific users |
+| `/close` | Alias for `/lock` |
+
+### Title Format
+
+The thread parent message reflects the access state:
+- `🔒🧵 Topic` — locked (owner only)
+- `🔓🧵 Topic` — open for all
+- `🔒🧵 Topic (🔓 for <@U1> <@U2>)` — open for specific users
+- `🔓🧵 Topic (🔒 for <@U3>)` — open but with banned users
+
+On `Resume()`, the title is parsed to recover the access state.
+
+### Rules
+
+- Only the owner can execute access commands
+- Owner can never be banned
+- `/open <@U>` unbans a previously banned user
+- `/lock <@U>` removes from the allowed list
+- Other slaude instances are subject to the same access rules
+
 ## Dependencies
 
 | Dependency | Purpose |

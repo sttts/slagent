@@ -205,7 +205,11 @@ func (m *mockSlack) handleConversationReplies(w http.ResponseWriter, r *http.Req
 	m.mu.Lock()
 	var msgs []map[string]any
 	for _, msg := range m.messages {
-		if msg.Channel != channel || msg.ThreadTS != threadTS || msg.Deleted {
+		// Include parent message (TS == threadTS) and thread replies
+		if msg.Channel != channel || msg.Deleted {
+			continue
+		}
+		if msg.ThreadTS != threadTS && msg.TS != threadTS {
 			continue
 		}
 		if oldest != "" && msg.TS <= oldest {

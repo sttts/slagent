@@ -2,6 +2,7 @@ package slagent
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -81,6 +82,495 @@ func TestThreadPermissions(t *testing.T) {
 	// /open from non-owner is ignored
 	if thread.handleCommand("U_OTHER", "/open") {
 		t.Error("/open from non-owner should not be handled")
+	}
+}
+
+func TestOpenForSpecificUsers(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithOwner("U_OWNER"))
+
+	// By default, only owner is authorized
+	if thread.isAuthorized("U_ALICE") {
+		t.Error("alice should not be authorized initially")
+	}
+
+	// /open <@U_ALICE> — allow alice
+	thread.handleCommand("U_OWNER", "/open <@U_ALICE>")
+	if !thread.isAuthorized("U_ALICE") {
+		t.Error("alice should be authorized after /open")
+	}
+	if thread.isAuthorized("U_BOB") {
+		t.Error("bob should not be authorized")
+	}
+
+	// /open <@U_BOB> — also allow bob (additive)
+	thread.handleCommand("U_OWNER", "/open <@U_BOB>")
+	if !thread.isAuthorized("U_ALICE") {
+		t.Error("alice should still be authorized")
+	}
+	if !thread.isAuthorized("U_BOB") {
+		t.Error("bob should now be authorized")
+	}
+
+	// /lock — reset everything
+	thread.handleCommand("U_OWNER", "/lock")
+	if thread.isAuthorized("U_ALICE") {
+		t.Error("alice should not be authorized after /lock")
+	}
+	if thread.isAuthorized("U_BOB") {
+		t.Error("bob should not be authorized after /lock")
+	}
+}
+
+func TestOpenMultipleUsersAtOnce(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithOwner("U_OWNER"))
+
+	// /open <@U_ALICE> <@U_BOB> — allow both at once
+	thread.handleCommand("U_OWNER", "/open <@U_ALICE> <@U_BOB>")
+	if !thread.isAuthorized("U_ALICE") {
+		t.Error("alice should be authorized")
+	}
+	if !thread.isAuthorized("U_BOB") {
+		t.Error("bob should be authorized")
+	}
+	if thread.isAuthorized("U_CAROL") {
+		t.Error("carol should not be authorized")
+	}
+}
+
+func TestLockSpecificUser(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithOwner("U_OWNER"))
+
+	// Open for everyone first
+	thread.handleCommand("U_OWNER", "/open")
+	if !thread.isAuthorized("U_ALICE") {
+		t.Error("alice should be authorized when open")
+	}
+
+	// /lock <@U_ALICE> — ban alice specifically
+	thread.handleCommand("U_OWNER", "/lock <@U_ALICE>")
+	if thread.isAuthorized("U_ALICE") {
+		t.Error("alice should be banned")
+	}
+	if !thread.isAuthorized("U_BOB") {
+		t.Error("bob should still be authorized (thread is open)")
+	}
+
+	// Owner is never banned
+	thread.handleCommand("U_OWNER", "/lock <@U_OWNER>")
+	if !thread.isAuthorized("U_OWNER") {
+		t.Error("owner should never be banned")
+	}
+}
+
+func TestLockMultipleUsers(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithOwner("U_OWNER"))
+	thread.handleCommand("U_OWNER", "/open")
+
+	// /lock <@U_ALICE> <@U_BOB> — ban both
+	thread.handleCommand("U_OWNER", "/lock <@U_ALICE> <@U_BOB>")
+	if thread.isAuthorized("U_ALICE") {
+		t.Error("alice should be banned")
+	}
+	if thread.isAuthorized("U_BOB") {
+		t.Error("bob should be banned")
+	}
+	if !thread.isAuthorized("U_CAROL") {
+		t.Error("carol should still be authorized")
+	}
+}
+
+func TestOpenUnbansBannedUser(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithOwner("U_OWNER"))
+	thread.handleCommand("U_OWNER", "/open")
+	thread.handleCommand("U_OWNER", "/lock <@U_ALICE>")
+	if thread.isAuthorized("U_ALICE") {
+		t.Error("alice should be banned")
+	}
+
+	// /open <@U_ALICE> — unban alice
+	thread.handleCommand("U_OWNER", "/open <@U_ALICE>")
+	if !thread.isAuthorized("U_ALICE") {
+		t.Error("alice should be unbanned after /open")
+	}
+}
+
+func TestLockRemovesFromAllowed(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithOwner("U_OWNER"))
+
+	// Allow alice specifically
+	thread.handleCommand("U_OWNER", "/open <@U_ALICE>")
+	if !thread.isAuthorized("U_ALICE") {
+		t.Error("alice should be allowed")
+	}
+
+	// Ban alice — should remove from allowed too
+	thread.handleCommand("U_OWNER", "/lock <@U_ALICE>")
+	if thread.isAuthorized("U_ALICE") {
+		t.Error("alice should be banned and removed from allowed")
+	}
+}
+
+func TestFormatTitle(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	tests := []struct {
+		name  string
+		setup func(*Thread)
+		want  string
+	}{
+		{
+			name:  "locked (default)",
+			setup: func(th *Thread) {},
+			want:  ":fox_face:🔒:thread: Test Topic",
+		},
+		{
+			name: "open for all",
+			setup: func(th *Thread) {
+				th.handleCommand("U_OWNER", "/open")
+			},
+			want: ":fox_face:🔓:thread: Test Topic",
+		},
+		{
+			name: "open for specific user",
+			setup: func(th *Thread) {
+				th.handleCommand("U_OWNER", "/open <@U_ALICE>")
+			},
+			want: ":fox_face:🔒:thread: Test Topic (🔓 for <@U_ALICE>)",
+		},
+		{
+			name: "open for multiple users",
+			setup: func(th *Thread) {
+				th.handleCommand("U_OWNER", "/open <@U_ALICE> <@U_BOB>")
+			},
+			want: ":fox_face:🔒:thread: Test Topic (🔓 for <@U_ALICE> <@U_BOB>)",
+		},
+		{
+			name: "banned user",
+			setup: func(th *Thread) {
+				th.handleCommand("U_OWNER", "/open")
+				th.handleCommand("U_OWNER", "/lock <@U_EVIL>")
+			},
+			want: ":fox_face:🔓:thread: Test Topic (🔒 for <@U_EVIL>)",
+		},
+		{
+			name: "allowed and banned",
+			setup: func(th *Thread) {
+				th.handleCommand("U_OWNER", "/open <@U_ALICE>")
+				th.handleCommand("U_OWNER", "/lock <@U_EVIL>")
+			},
+			want: ":fox_face:🔒:thread: Test Topic (🔓 for <@U_ALICE>) (🔒 for <@U_EVIL>)",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			th := NewThread(mock.client(), "xoxc-test", "C_TEST",
+				WithOwner("U_OWNER"),
+				WithInstanceID("fox_face"),
+			)
+			th.title = "Test Topic"
+			tt.setup(th)
+			got := th.formatTitle()
+			if got != tt.want {
+				t.Errorf("formatTitle() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseTitle(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	tests := []struct {
+		name         string
+		text         string
+		wantTitle    string
+		wantOpen     bool
+		wantAllowed  []string
+		wantBanned   []string
+	}{
+		{
+			name:      "locked",
+			text:      ":fox_face:🔒:thread: My Topic",
+			wantTitle: "My Topic",
+			wantOpen:  false,
+		},
+		{
+			name:      "open",
+			text:      ":fox_face:🔓:thread: My Topic",
+			wantTitle: "My Topic",
+			wantOpen:  true,
+		},
+		{
+			name:        "selective access",
+			text:        ":fox_face:🔒:thread: My Topic (🔓 for <@U_ALICE> <@U_BOB>)",
+			wantTitle:   "My Topic",
+			wantOpen:    false,
+			wantAllowed: []string{"U_ALICE", "U_BOB"},
+		},
+		{
+			name:       "banned users",
+			text:       ":fox_face:🔓:thread: My Topic (🔒 for <@U_EVIL>)",
+			wantTitle:  "My Topic",
+			wantOpen:   true,
+			wantBanned: []string{"U_EVIL"},
+		},
+		{
+			name:        "allowed and banned",
+			text:        ":fox_face:🔒:thread: My Topic (🔓 for <@U_ALICE>) (🔒 for <@U_EVIL>)",
+			wantTitle:   "My Topic",
+			wantOpen:    false,
+			wantAllowed: []string{"U_ALICE"},
+			wantBanned:  []string{"U_EVIL"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			th := NewThread(mock.client(), "xoxc-test", "C_TEST",
+				WithInstanceID("fox_face"),
+			)
+			th.parseTitle(tt.text)
+
+			if th.title != tt.wantTitle {
+				t.Errorf("title = %q, want %q", th.title, tt.wantTitle)
+			}
+			if th.openAccess != tt.wantOpen {
+				t.Errorf("openAccess = %v, want %v", th.openAccess, tt.wantOpen)
+			}
+			for _, uid := range tt.wantAllowed {
+				if !th.allowedUsers[uid] {
+					t.Errorf("allowedUsers missing %s", uid)
+				}
+			}
+			for _, uid := range tt.wantBanned {
+				if !th.bannedUsers[uid] {
+					t.Errorf("bannedUsers missing %s", uid)
+				}
+			}
+		})
+	}
+}
+
+func TestParseTitleRoundtrip(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	// Build a thread with allowed + banned users, format title, parse it back
+	th := NewThread(mock.client(), "xoxc-test", "C_TEST",
+		WithOwner("U_OWNER"),
+		WithInstanceID("fox_face"),
+	)
+	th.title = "Design API"
+	th.handleCommand("U_OWNER", "/open <@U_ALICE> <@U_BOB>")
+	th.handleCommand("U_OWNER", "/lock <@U_EVIL>")
+
+	label := th.formatTitle()
+
+	// Parse into a fresh thread
+	th2 := NewThread(mock.client(), "xoxc-test", "C_TEST",
+		WithInstanceID("fox_face"),
+	)
+	th2.parseTitle(label)
+
+	if th2.title != "Design API" {
+		t.Errorf("roundtrip title = %q, want %q", th2.title, "Design API")
+	}
+	if th2.openAccess != false {
+		t.Error("roundtrip openAccess should be false")
+	}
+	if !th2.allowedUsers["U_ALICE"] || !th2.allowedUsers["U_BOB"] {
+		t.Errorf("roundtrip allowedUsers = %v, want alice+bob", th2.allowedUsers)
+	}
+	if !th2.bannedUsers["U_EVIL"] {
+		t.Errorf("roundtrip bannedUsers = %v, want evil", th2.bannedUsers)
+	}
+}
+
+func TestThreadTitleUpdatedOnAccessChange(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+		WithOwner("U_OWNER"),
+		WithInstanceID("fox_face"),
+	)
+	thread.Start("My Task")
+
+	// Title should show locked by default
+	parentMsg := mock.postedMessages()[0]
+	if !strings.Contains(parentMsg.Text, "🔒") {
+		t.Errorf("initial title should contain 🔒, got %q", parentMsg.Text)
+	}
+
+	// /open — title should update to 🔓
+	thread.handleCommand("U_OWNER", "/open")
+	msgs := mock.postedMessages()
+	// Find the updated parent message
+	var updated string
+	for _, m := range msgs {
+		if m.TS == parentMsg.TS && m.IsUpdate {
+			updated = m.Text
+		}
+	}
+	if !strings.Contains(updated, "🔓") {
+		t.Errorf("title after /open should contain 🔓, got %q", updated)
+	}
+}
+
+func TestHandleCommandUnknownCommand(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithOwner("U_OWNER"))
+	if thread.handleCommand("U_OWNER", "/unknown") {
+		t.Error("/unknown should not be handled")
+	}
+	if thread.handleCommand("U_OWNER", "/help") {
+		t.Error("/help should not be handled")
+	}
+}
+
+func TestHandleCommandNonOwnerBlocked(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithOwner("U_OWNER"))
+
+	if thread.handleCommand("U_OTHER", "/open") {
+		t.Error("non-owner /open should be rejected")
+	}
+	if thread.handleCommand("U_OTHER", "/lock") {
+		t.Error("non-owner /lock should be rejected")
+	}
+	if thread.handleCommand("U_OTHER", "/open <@U_ALICE>") {
+		t.Error("non-owner /open @user should be rejected")
+	}
+	if thread.handleCommand("U_OTHER", "/lock <@U_ALICE>") {
+		t.Error("non-owner /lock @user should be rejected")
+	}
+}
+
+func TestParseMention(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"<@U123>", "U123"},
+		{"<@U_ALICE>", "U_ALICE"},
+		{"hello", ""},
+		{"<@>", ""},
+		{"<@U123", ""},
+		{"U123>", ""},
+	}
+	for _, tt := range tests {
+		got := parseMention(tt.input)
+		if got != tt.want {
+			t.Errorf("parseMention(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestNonOwnerCannotSendCommands(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+		WithOwner("U_OWNER"),
+		WithInstanceID("fox_face"),
+	)
+	thread.Start("Test")
+	threadTS := thread.ThreadTS()
+
+	// Non-owner sends a /command via emoji prefix — should be ignored (not forwarded)
+	mock.injectReply("C_TEST", threadTS, "U_OTHER", ":fox_face:: /compact")
+
+	replies, err := thread.PollReplies()
+	if err != nil {
+		t.Fatalf("PollReplies: %v", err)
+	}
+
+	// Non-owner is not authorized, so the command should not be forwarded
+	if len(replies) != 0 {
+		t.Fatalf("replies = %d, want 0 (non-owner command should be ignored)", len(replies))
+	}
+
+	// Owner sends the same command — should be forwarded
+	mock.injectReply("C_TEST", threadTS, "U_OWNER", ":fox_face:: /compact")
+
+	replies, err = thread.PollReplies()
+	if err != nil {
+		t.Fatalf("PollReplies: %v", err)
+	}
+	if len(replies) != 1 {
+		t.Fatalf("replies = %d, want 1", len(replies))
+	}
+	if replies[0].Command != "/compact" {
+		t.Errorf("replies[0].Command = %q, want %q", replies[0].Command, "/compact")
+	}
+}
+
+func TestNonOwnerCommandAfterOpen(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+		WithOwner("U_OWNER"),
+		WithInstanceID("fox_face"),
+	)
+	thread.Start("Test")
+	threadTS := thread.ThreadTS()
+
+	// Open the thread for everyone
+	thread.handleCommand("U_OWNER", "/open")
+
+	// Non-owner sends a /command — should be forwarded (thread is open)
+	mock.injectReply("C_TEST", threadTS, "U_OTHER", ":fox_face:: /compact")
+
+	replies, err := thread.PollReplies()
+	if err != nil {
+		t.Fatalf("PollReplies: %v", err)
+	}
+	if len(replies) != 1 {
+		t.Fatalf("replies = %d, want 1 (authorized user's command should be forwarded)", len(replies))
+	}
+	if replies[0].Command != "/compact" {
+		t.Errorf("replies[0].Command = %q, want %q", replies[0].Command, "/compact")
+	}
+}
+
+func TestCloseIsAliasForLock(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithOwner("U_OWNER"))
+	thread.handleCommand("U_OWNER", "/open <@U_ALICE>")
+	if !thread.isAuthorized("U_ALICE") {
+		t.Error("alice should be authorized")
+	}
+
+	// /close should work like /lock
+	thread.handleCommand("U_OWNER", "/close")
+	if thread.isAuthorized("U_ALICE") {
+		t.Error("alice should not be authorized after /close")
 	}
 }
 

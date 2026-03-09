@@ -120,5 +120,17 @@ The activity message is managed by Turn (compat backend). Tasks message is manag
 - Also works with @mentions: `@user :fox_face:: message`.
 - Non-command messages are always delivered to ALL instances (with original text including prefix). The system prompt tells Claude to ignore messages prefixed with another instance's emoji.
 - Commands (`:fox_face:: /open`) are instance-exclusive — only the targeted instance receives them.
-- `/open`, `/close` are slaude commands. Unknown `/commands` are forwarded to Claude via `Reply.Command`.
+- Unknown `/commands` are forwarded to Claude via `Reply.Command`.
 - Parsing: `parseInstancePrefix()` in `thread.go`, used by `pollOnce()` in `reply.go`.
+
+## Thread Access Control
+- Default: locked to owner only.
+- `/open` — open for everyone. `/open <@U1> <@U2>` — allow specific users (additive).
+- `/lock` — lock to owner only (resets). `/lock <@U1>` — ban specific users.
+- `/close` — alias for `/lock`.
+- `/open` unbans a banned user. `/lock` removes from allowed.
+- Owner can never be banned.
+- Thread title reflects state: `:instanceID:🔒:thread: Topic` / `:instanceID:🔓:thread: Topic`.
+- Selective: `(🔓 for <@U1> <@U2>)`. Bans: `(🔒 for <@U3>)`.
+- Title is parsed on `Resume()` to recover access state.
+- Other slaude instances are subject to the same access rules via `isAuthorized()`.

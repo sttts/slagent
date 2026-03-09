@@ -2,6 +2,7 @@ package slagent
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
@@ -113,8 +114,11 @@ type Thread struct {
 	config     threadConfig
 
 	// Permissions
-	ownerID    string
-	openAccess bool
+	ownerID      string
+	openAccess   bool
+	allowedUsers map[string]bool // specific users allowed when not fully open
+	bannedUsers  map[string]bool // explicitly banned users (override openAccess)
+	title        string         // thread title (for access state in parent message)
 
 	// Reply tracking
 	lastTS string
@@ -140,26 +144,33 @@ func NewThread(client *slackapi.Client, token, channel string, opts ...ThreadOpt
 	}
 
 	t := &Thread{
-		api:        client,
-		token:      token,
-		channel:    channel,
-		instanceID: instanceID,
-		blockID:    slagentBlockPrefix + instanceID,
-		emoji:      InstanceEmoji(instanceID),
-		config:     cfg,
-		ownerID:    cfg.ownerID,
-		openAccess: cfg.openAccess,
-		userCache:  make(map[string]string),
+		api:          client,
+		token:        token,
+		channel:      channel,
+		instanceID:   instanceID,
+		blockID:      slagentBlockPrefix + instanceID,
+		emoji:        InstanceEmoji(instanceID),
+		config:       cfg,
+		ownerID:      cfg.ownerID,
+		openAccess:   cfg.openAccess,
+		allowedUsers: make(map[string]bool),
+		bannedUsers:  make(map[string]bool),
+		userCache:    make(map[string]string),
 	}
 	return t
 }
 
 // Start posts the initial thread message and returns the thread URL.
 func (t *Thread) Start(title string) (string, error) {
-	label := fmt.Sprintf(":%s::thread: Agent session", t.instanceID)
-	if title != "" {
-		label = fmt.Sprintf(":%s::thread: %s", t.instanceID, title)
+	if title == "" {
+		title = "Agent session"
 	}
+
+	t.mu.Lock()
+	t.title = title
+	t.mu.Unlock()
+
+	label := t.formatTitle()
 
 	t.logSlack("postMessage(thread-start)", label)
 	_, ts, err := t.api.PostMessage(
@@ -186,12 +197,24 @@ func (t *Thread) Start(title string) (string, error) {
 	return link, nil
 }
 
-// Resume attaches to an existing thread.
+// Resume attaches to an existing thread and recovers access state from the title.
 func (t *Thread) Resume(threadTS string) {
 	t.mu.Lock()
 	t.threadTS = threadTS
 	t.lastTS = threadTS
 	t.mu.Unlock()
+
+	// Read thread parent to recover access state from title
+	params := &slackapi.GetConversationRepliesParameters{
+		ChannelID: t.channel,
+		Timestamp: threadTS,
+		Limit:     1,
+	}
+	msgs, _, _, err := t.api.GetConversationReplies(params)
+	if err != nil || len(msgs) == 0 {
+		return
+	}
+	t.parseTitle(msgs[0].Text)
 }
 
 // NewTurn begins a new response turn.
@@ -462,18 +485,149 @@ func (t *Thread) resolveUser(userID string) string {
 	return name
 }
 
+// formatTitle builds the thread parent label reflecting access state.
+// Format: ":instanceID:🔒:thread: Title" or ":instanceID:🔓:thread: Title"
+// With selective access: ":instanceID:🔒:thread: Title (🔓 for <@U1> <@U2>)"
+// With bans: ":instanceID:🔓:thread: Title (🔒 for <@U3>)"
+func (t *Thread) formatTitle() string {
+	t.mu.Lock()
+	title := t.title
+	open := t.openAccess
+	allowed := make([]string, 0, len(t.allowedUsers))
+	for u := range t.allowedUsers {
+		allowed = append(allowed, u)
+	}
+	banned := make([]string, 0, len(t.bannedUsers))
+	for u := range t.bannedUsers {
+		banned = append(banned, u)
+	}
+	t.mu.Unlock()
+
+	sort.Strings(allowed)
+	sort.Strings(banned)
+
+	if title == "" {
+		title = "Agent session"
+	}
+
+	lock := "🔒"
+	if open {
+		lock = "🔓"
+	}
+	label := fmt.Sprintf(":%s:%s:thread: %s", t.instanceID, lock, title)
+
+	// Append selective access list
+	if !open && len(allowed) > 0 {
+		var mentions []string
+		for _, u := range allowed {
+			mentions = append(mentions, fmt.Sprintf("<@%s>", u))
+		}
+		label += fmt.Sprintf(" (🔓 for %s)", strings.Join(mentions, " "))
+	}
+
+	// Append ban list
+	if len(banned) > 0 {
+		var mentions []string
+		for _, u := range banned {
+			mentions = append(mentions, fmt.Sprintf("<@%s>", u))
+		}
+		label += fmt.Sprintf(" (🔒 for %s)", strings.Join(mentions, " "))
+	}
+	return label
+}
+
+// parseTitle recovers access state from a thread parent message.
+func (t *Thread) parseTitle(text string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	// Extract title after ":thread: "
+	if idx := strings.Index(text, ":thread: "); idx >= 0 {
+		t.title = text[idx+len(":thread: "):]
+	}
+
+	// Detect lock state from 🔒/🔓 before :thread:
+	t.openAccess = strings.Contains(text, "🔓:thread:")
+
+	// Strip parentheticals from title, parse allowed and banned users
+	t.allowedUsers = make(map[string]bool)
+	t.bannedUsers = make(map[string]bool)
+
+	// Parse "(🔓 for <@U1> <@U2>)" — allowed users
+	if idx := strings.Index(t.title, " (🔓 for "); idx >= 0 {
+		end := strings.Index(t.title[idx:], ")")
+		if end >= 0 {
+			extractMentions(t.title[idx:idx+end+1], t.allowedUsers)
+			t.title = t.title[:idx] + t.title[idx+end+1:]
+		}
+	}
+
+	// Parse "(🔒 for <@U3>)" — banned users
+	if idx := strings.Index(t.title, " (🔒 for "); idx >= 0 {
+		end := strings.Index(t.title[idx:], ")")
+		if end >= 0 {
+			extractMentions(t.title[idx:idx+end+1], t.bannedUsers)
+			t.title = t.title[:idx] + t.title[idx+end+1:]
+		}
+	}
+}
+
+// extractMentions parses <@U...> mentions from a string into the target map.
+func extractMentions(s string, target map[string]bool) {
+	rest := s
+	for {
+		start := strings.Index(rest, "<@")
+		if start < 0 {
+			break
+		}
+		end := strings.Index(rest[start:], ">")
+		if end < 0 {
+			break
+		}
+		target[rest[start+2:start+end]] = true
+		rest = rest[start+end+1:]
+	}
+}
+
+// updateTitle updates the thread parent message to reflect current access state.
+func (t *Thread) updateTitle() {
+	t.mu.Lock()
+	threadTS := t.threadTS
+	t.mu.Unlock()
+
+	if threadTS == "" {
+		return
+	}
+
+	label := t.formatTitle()
+	t.logSlack("updateMessage(title)", label)
+	t.api.UpdateMessage(
+		t.channel,
+		threadTS,
+		slackapi.MsgOptionBlocks(t.slagentSection(label)),
+		slackapi.MsgOptionText(label, false),
+	)
+}
+
 // isAuthorized checks whether a user is allowed to interact.
 func (t *Thread) isAuthorized(userID string) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	// Banned users are always blocked (except owner)
+	if t.bannedUsers[userID] && userID != t.ownerID {
+		return false
+	}
 	if t.openAccess {
 		return true
 	}
 	if t.ownerID == "" {
 		return true // no owner restriction
 	}
-	return userID == t.ownerID
+	if userID == t.ownerID {
+		return true
+	}
+	return t.allowedUsers[userID]
 }
 
 // parseInstancePrefix checks if text starts with a :shortcode:: prefix (emoji + colon).
@@ -527,27 +681,79 @@ func parseMessage(text string) (instanceID, cleaned string, targeted bool) {
 	return parseInstancePrefix(s)
 }
 
-// handleCommand processes /open and /close commands.
+// handleCommand processes /open, /lock, and /close commands.
+// /open — open for all users
+// /open <@U1> <@U2> — allow specific users (additive)
+// /lock — lock to owner only (clears allowed and banned users)
+// /lock <@U1> <@U2> — ban specific users
+// /close — alias for /lock
 // Returns true if the message was a known command.
 func (t *Thread) handleCommand(userID, cmd string) bool {
 	cmd = strings.TrimSpace(cmd)
-	switch cmd {
+	parts := strings.Fields(cmd)
+	if len(parts) == 0 {
+		return false
+	}
+
+	switch parts[0] {
 	case "/open":
 		// allow
-	case "/close":
+	case "/lock", "/close":
 		// allow
 	default:
 		return false
 	}
 
+	// Only the owner can run access commands
 	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	// Only the owner can run commands
 	if t.ownerID != "" && userID != t.ownerID {
+		t.mu.Unlock()
 		return false
 	}
 
-	t.openAccess = cmd == "/open"
+	switch parts[0] {
+	case "/open":
+		if len(parts) == 1 {
+			// /open — open for everyone
+			t.openAccess = true
+			t.allowedUsers = make(map[string]bool)
+		} else {
+			// /open <@U1> <@U2> — allow specific users
+			t.openAccess = false
+			for _, mention := range parts[1:] {
+				if uid := parseMention(mention); uid != "" {
+					t.allowedUsers[uid] = true
+					delete(t.bannedUsers, uid) // unban if banned
+				}
+			}
+		}
+	case "/lock", "/close":
+		if len(parts) == 1 {
+			// /lock — lock to owner only, reset everything
+			t.openAccess = false
+			t.allowedUsers = make(map[string]bool)
+			t.bannedUsers = make(map[string]bool)
+		} else {
+			// /lock <@U1> — ban specific users
+			for _, mention := range parts[1:] {
+				if uid := parseMention(mention); uid != "" {
+					t.bannedUsers[uid] = true
+					delete(t.allowedUsers, uid) // remove from allowed
+				}
+			}
+		}
+	}
+	t.mu.Unlock()
+
+	// Update thread parent to reflect new access state
+	t.updateTitle()
 	return true
+}
+
+// parseMention extracts a user ID from a Slack mention ("<@U123>").
+func parseMention(s string) string {
+	if strings.HasPrefix(s, "<@") && strings.HasSuffix(s, ">") {
+		return s[2 : len(s)-1]
+	}
+	return ""
 }
