@@ -356,11 +356,12 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 
 		// Send commands directly to Claude (each as its own turn)
 		for _, r := range commands {
+			turn := sess.startThinking()
 			if err := proc.Send(r.Command); err != nil {
 				ui.Error(fmt.Sprintf("send command to claude: %v", err))
 				break
 			}
-			if err := sess.readTurn(); err != nil {
+			if err := sess.readTurn(turn); err != nil {
 				ui.Error(fmt.Sprintf("reading response: %v", err))
 				break
 			}
@@ -368,6 +369,12 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 
 		// Send regular feedback as team messages
 		if len(feedback) > 0 {
+			// Show thinking immediately, unless all messages are addressed to other instances
+			var turn slagent.Turn
+			if sess.hasFeedbackForUs(feedback) {
+				turn = sess.startThinking()
+			}
+
 			var sb strings.Builder
 			sb.WriteString("[Team feedback from Slack thread]\n")
 			for _, r := range feedback {
@@ -378,7 +385,7 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 				ui.Error(fmt.Sprintf("send to claude: %v", err))
 				break
 			}
-			if err := sess.readTurn(); err != nil {
+			if err := sess.readTurn(turn); err != nil {
 				ui.Error(fmt.Sprintf("reading response: %v", err))
 				break
 			}
@@ -400,7 +407,9 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 }
 
 // readTurn reads events from Claude until the turn ends (result event).
-func (s *Session) readTurn() error {
+// If earlyTurn is non-nil, it is used instead of creating a new turn
+// (allows showing thinking activity before Claude starts responding).
+func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 	s.ui.StartResponse()
 	var fullText strings.Builder
 	toolSeq := 0
@@ -410,7 +419,9 @@ func (s *Session) readTurn() error {
 
 	// Set up slagent turn for Slack streaming
 	var turn slagent.Turn
-	if s.thread != nil {
+	if len(earlyTurn) > 0 && earlyTurn[0] != nil {
+		turn = earlyTurn[0]
+	} else if s.thread != nil {
 		turn = s.thread.NewTurn()
 	}
 
@@ -670,6 +681,35 @@ func (s *Session) formatTodos() string {
 		}
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// startThinking creates a new turn and shows a thinking activity immediately,
+// returning the turn for use by readTurn. This gives instant feedback in Slack
+// before Claude starts responding.
+func (s *Session) startThinking() slagent.Turn {
+	if s.thread == nil {
+		return nil
+	}
+	turn := s.thread.NewTurn()
+	turn.Thinking("thinking...")
+	return turn
+}
+
+// hasFeedbackForUs returns true if any feedback message is either unaddressed
+// or addressed to our instance. Messages addressed to other instances (which
+// Claude will silently ignore) don't count.
+func (s *Session) hasFeedbackForUs(feedback []slagent.Reply) bool {
+	if s.thread == nil {
+		return true
+	}
+	ourID := s.thread.InstanceID()
+	for _, r := range feedback {
+		targetID, _, targeted := slagent.ParseMessage(r.Text)
+		if !targeted || targetID == ourID {
+			return true
+		}
+	}
+	return false
 }
 
 // waitForReplies blocks until Slack replies are available or context is cancelled.

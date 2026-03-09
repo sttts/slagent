@@ -147,6 +147,16 @@ The `result` event marks the end of a turn. At this point:
 3. Queued Slack replies are checked and injected as the next user message
 4. The session waits for more Slack feedback
 
+### Early Thinking
+
+When forwarding a Slack message to Claude, the session creates a turn and
+posts a "thinking..." activity immediately — before Claude starts responding.
+This gives instant visual feedback in Slack. The same turn is then passed to
+`readTurn()` so Claude's actual response replaces the thinking activity.
+
+Messages addressed to other instances (`:other_emoji::`) skip this since
+Claude will silently ignore them anyway.
+
 ### Tool Lifecycle
 
 Tools are tracked across their lifecycle in session.go:

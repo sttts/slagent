@@ -675,8 +675,12 @@ func parseInstancePrefix(text string) (instanceID, rest string, targeted bool) {
 	return shortcode, rest, true
 }
 
-// parseMessage extracts the target instance and cleaned text from a Slack message.
+// ParseMessage extracts the target instance and cleaned text from a Slack message.
 // Strips leading @mentions, then checks for :shortcode: prefix.
+func ParseMessage(text string) (instanceID, cleaned string, targeted bool) {
+	return parseMessage(text)
+}
+
 func parseMessage(text string) (instanceID, cleaned string, targeted bool) {
 	s := text
 
