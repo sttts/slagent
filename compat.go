@@ -294,16 +294,8 @@ func (c *compatTurn) writeText(text string) {
 			return
 		}
 
-		// Reuse activity message for text (avoids delete+post flicker)
-		if c.activityTS != "" {
-			c.stopActivityTimer()
-			c.textTS = c.activityTS
-			c.activityTS = ""
-			c.activityDeleted = true
-			c.thinkBuf.Reset()
-			c.activities = nil
-			c.toolIndex = make(map[string]int)
-		}
+		// Delete activity and post text immediately (same lock scope, minimal gap)
+		c.deleteActivity()
 	}
 	c.textBuf.WriteString(text)
 
