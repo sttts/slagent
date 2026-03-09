@@ -115,7 +115,7 @@ func InstanceEmoji(instanceID string) string {
 
 func defaultConfig() threadConfig {
 	return threadConfig{
-		pollInterval:      3 * time.Second,
+		pollInterval:      1 * time.Second,
 		bufferSize:        256,
 		markdownConverter: MarkdownToMrkdwn,
 	}
