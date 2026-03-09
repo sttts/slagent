@@ -510,19 +510,20 @@ func (t *Thread) formatTitle() string {
 		title = "Agent session"
 	}
 
-	lock := "🔒"
-	if open {
-		lock = "🔓"
+	// 🔒 shown when locked, omitted when open
+	lock := ""
+	if !open {
+		lock = "🔒"
 	}
 	label := fmt.Sprintf(":%s:%s:thread: %s", t.instanceID, lock, title)
 
-	// Append selective access list
+	// Append selective access list when locked
 	if !open && len(allowed) > 0 {
 		var mentions []string
 		for _, u := range allowed {
 			mentions = append(mentions, fmt.Sprintf("<@%s>", u))
 		}
-		label += fmt.Sprintf(" (🔓 for %s)", strings.Join(mentions, " "))
+		label += fmt.Sprintf(" (🔓 %s)", strings.Join(mentions, " "))
 	}
 
 	// Append ban list
@@ -531,7 +532,7 @@ func (t *Thread) formatTitle() string {
 		for _, u := range banned {
 			mentions = append(mentions, fmt.Sprintf("<@%s>", u))
 		}
-		label += fmt.Sprintf(" (🔒 for %s)", strings.Join(mentions, " "))
+		label += fmt.Sprintf(" (🔒 %s)", strings.Join(mentions, " "))
 	}
 	return label
 }
@@ -546,28 +547,26 @@ func (t *Thread) parseTitle(text string) {
 		t.title = text[idx+len(":thread: "):]
 	}
 
-	// Detect lock state from 🔒/🔓 before :thread:
-	t.openAccess = strings.Contains(text, "🔓:thread:")
-
-	// Strip parentheticals from title, parse allowed and banned users
+	// 🔒 before :thread: means locked, absence means open
+	t.openAccess = !strings.Contains(text, "🔒:thread:")
 	t.allowedUsers = make(map[string]bool)
 	t.bannedUsers = make(map[string]bool)
 
-	// Parse "(🔓 for <@U1> <@U2>)" — allowed users
-	if idx := strings.Index(t.title, " (🔓 for "); idx >= 0 {
+	// Parse "(🔓 <@U1> <@U2>)" — allowed users
+	if idx := strings.Index(t.title, " (🔓 "); idx >= 0 {
 		end := strings.Index(t.title[idx:], ")")
 		if end >= 0 {
 			extractMentions(t.title[idx:idx+end+1], t.allowedUsers)
-			t.title = t.title[:idx] + t.title[idx+end+1:]
+			t.title = strings.TrimSpace(t.title[:idx] + t.title[idx+end+1:])
 		}
 	}
 
-	// Parse "(🔒 for <@U3>)" — banned users
-	if idx := strings.Index(t.title, " (🔒 for "); idx >= 0 {
+	// Parse "(🔒 <@U3>)" — banned users
+	if idx := strings.Index(t.title, " (🔒 "); idx >= 0 {
 		end := strings.Index(t.title[idx:], ")")
 		if end >= 0 {
 			extractMentions(t.title[idx:idx+end+1], t.bannedUsers)
-			t.title = t.title[:idx] + t.title[idx+end+1:]
+			t.title = strings.TrimSpace(t.title[:idx] + t.title[idx+end+1:])
 		}
 	}
 }

@@ -247,21 +247,21 @@ func TestFormatTitle(t *testing.T) {
 			setup: func(th *Thread) {
 				th.handleCommand("U_OWNER", "/open")
 			},
-			want: ":fox_face:🔓:thread: Test Topic",
+			want: ":fox_face::thread: Test Topic",
 		},
 		{
 			name: "open for specific user",
 			setup: func(th *Thread) {
 				th.handleCommand("U_OWNER", "/open <@U_ALICE>")
 			},
-			want: ":fox_face:🔒:thread: Test Topic (🔓 for <@U_ALICE>)",
+			want: ":fox_face:🔒:thread: Test Topic (🔓 <@U_ALICE>)",
 		},
 		{
 			name: "open for multiple users",
 			setup: func(th *Thread) {
 				th.handleCommand("U_OWNER", "/open <@U_ALICE> <@U_BOB>")
 			},
-			want: ":fox_face:🔒:thread: Test Topic (🔓 for <@U_ALICE> <@U_BOB>)",
+			want: ":fox_face:🔒:thread: Test Topic (🔓 <@U_ALICE> <@U_BOB>)",
 		},
 		{
 			name: "banned user",
@@ -269,7 +269,7 @@ func TestFormatTitle(t *testing.T) {
 				th.handleCommand("U_OWNER", "/open")
 				th.handleCommand("U_OWNER", "/lock <@U_EVIL>")
 			},
-			want: ":fox_face:🔓:thread: Test Topic (🔒 for <@U_EVIL>)",
+			want: ":fox_face::thread: Test Topic (🔒 <@U_EVIL>)",
 		},
 		{
 			name: "allowed and banned",
@@ -277,7 +277,7 @@ func TestFormatTitle(t *testing.T) {
 				th.handleCommand("U_OWNER", "/open <@U_ALICE>")
 				th.handleCommand("U_OWNER", "/lock <@U_EVIL>")
 			},
-			want: ":fox_face:🔒:thread: Test Topic (🔓 for <@U_ALICE>) (🔒 for <@U_EVIL>)",
+			want: ":fox_face:🔒:thread: Test Topic (🔓 <@U_ALICE>) (🔒 <@U_EVIL>)",
 		},
 	}
 	for _, tt := range tests {
@@ -316,27 +316,27 @@ func TestParseTitle(t *testing.T) {
 		},
 		{
 			name:      "open",
-			text:      ":fox_face:🔓:thread: My Topic",
+			text:      ":fox_face::thread: My Topic",
 			wantTitle: "My Topic",
 			wantOpen:  true,
 		},
 		{
 			name:        "selective access",
-			text:        ":fox_face:🔒:thread: My Topic (🔓 for <@U_ALICE> <@U_BOB>)",
+			text:        ":fox_face:🔒:thread: My Topic (🔓 <@U_ALICE> <@U_BOB>)",
 			wantTitle:   "My Topic",
 			wantOpen:    false,
 			wantAllowed: []string{"U_ALICE", "U_BOB"},
 		},
 		{
 			name:       "banned users",
-			text:       ":fox_face:🔓:thread: My Topic (🔒 for <@U_EVIL>)",
+			text:       ":fox_face::thread: My Topic (🔒 <@U_EVIL>)",
 			wantTitle:  "My Topic",
 			wantOpen:   true,
 			wantBanned: []string{"U_EVIL"},
 		},
 		{
 			name:        "allowed and banned",
-			text:        ":fox_face:🔒:thread: My Topic (🔓 for <@U_ALICE>) (🔒 for <@U_EVIL>)",
+			text:        ":fox_face:🔒:thread: My Topic (🔓 <@U_ALICE>) (🔒 <@U_EVIL>)",
 			wantTitle:   "My Topic",
 			wantOpen:    false,
 			wantAllowed: []string{"U_ALICE"},
@@ -415,24 +415,23 @@ func TestThreadTitleUpdatedOnAccessChange(t *testing.T) {
 	)
 	thread.Start("My Task")
 
-	// Title should show locked by default
+	// Default is locked — title should contain 🔒
 	parentMsg := mock.postedMessages()[0]
 	if !strings.Contains(parentMsg.Text, "🔒") {
 		t.Errorf("initial title should contain 🔒, got %q", parentMsg.Text)
 	}
 
-	// /open — title should update to 🔓
+	// /open — title should no longer contain 🔒
 	thread.handleCommand("U_OWNER", "/open")
 	msgs := mock.postedMessages()
-	// Find the updated parent message
 	var updated string
 	for _, m := range msgs {
 		if m.TS == parentMsg.TS && m.IsUpdate {
 			updated = m.Text
 		}
 	}
-	if !strings.Contains(updated, "🔓") {
-		t.Errorf("title after /open should contain 🔓, got %q", updated)
+	if strings.Contains(updated, "🔒") {
+		t.Errorf("title after /open should not contain 🔒, got %q", updated)
 	}
 }
 
