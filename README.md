@@ -104,6 +104,15 @@ Start a thread open for all with `--open`:
 slaude start --open -c CHANNEL -- "design the API"
 ```
 
+Join or resume with `--closed` to ignore the thread's inherited access state and start locked:
+
+```bash
+slaude join --closed https://team.slack.com/archives/C123/p1234567890 "review"
+slaude resume --closed https://team.slack.com/archives/C123/p1234567890#fox@ts -- --resume ID
+```
+
+Each instance manages its own access independently. Joined/resumed instances don't persist access changes to the shared thread title — their `/open` and `/lock` commands only affect in-memory state.
+
 Thread title reflects access state:
 - `🔒🧵 Topic` — locked (owner only)
 - `🧵 Topic` — open for all

@@ -56,6 +56,8 @@ slaude resume https://team.slack.com/archives/C123/p1234567890123456#abc123@1700
 | `-c, --channel` | Slack channel name or ID (start only) |
 | `-u, --user` | Slack user(s) for DM (start only) |
 | `-w, --workspace` | Slack workspace URL (uses default if omitted) |
+| `--open` | Start with thread open for all (start only) |
+| `--closed` | Override inherited access to locked (join/resume only) |
 | `--debug` | Write debug logs |
 | `[topic...]` | Positional topic arg |
 
@@ -466,6 +468,21 @@ The thread parent message reflects the access state:
 - `🧵 Topic (🔒 <@U3>)` — open but with banned users
 
 On `Resume()`, the title is parsed to recover the access state.
+
+### Joined Instance Isolation
+
+When an instance joins or resumes a thread (`Thread.Resume()`), it sets
+`t.joined = true`. Joined instances:
+
+- **Inherit** the access state from the thread title (open/locked/allowed users)
+- **Can override** with `--closed` (`Thread.SetClosed()`) to start locked
+  regardless of the inherited state
+- **Do not persist** access changes back to the thread title — `/open` and
+  `/lock` commands only affect in-memory state for that instance
+- **Display** the current access mode in the start banner (`Thread.AccessMode()`)
+
+This means the thread creator owns the shared title, while joined instances
+manage their own access independently.
 
 ### Rules
 
