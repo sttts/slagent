@@ -200,7 +200,7 @@ func runSession(cfg session.Config) error {
 		fmt.Println()
 		fmt.Println("🔄 To resume this session:")
 		if resume.ThreadURL != "" && resume.InstanceID != "" {
-			fmt.Printf("  slaude resume '%s#%s' -- --resume %s\n", resume.ThreadURL, resume.InstanceID, resume.SessionID)
+			fmt.Printf("  slaude resume %s#%s -- --resume %s\n", resume.ThreadURL, resume.InstanceID, resume.SessionID)
 		} else {
 			fmt.Printf("  slaude resume (thread URL unavailable) -- --resume %s\n", resume.SessionID)
 		}
@@ -385,12 +385,19 @@ func main() {
 		kongArgs = append(kongArgs, a)
 	}
 
-	ctx := kong.Parse(&cli,
+	parser, err := kong.New(&cli,
 		kong.Name("slaude"),
 		kong.Description("Mirror Claude Code sessions to Slack threads."),
 		kong.UsageOnError(),
-		kong.Vars{"args": strings.Join(kongArgs, " ")},
 	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ %v\n", err)
+		os.Exit(1)
+	}
+	ctx, err := parser.Parse(kongArgs)
+	if err != nil {
+		parser.FatalIfErrorf(err)
+	}
 
 	// Inject pass-through args into session commands
 	switch cmd := ctx.Selected().Target.Addr().Interface().(type) {
