@@ -1056,7 +1056,7 @@ func TestPollRepliesSkipsStreamingMessages(t *testing.T) {
 	}
 }
 
-func TestPollRepliesDeliversFinalizedFromOtherInstance(t *testing.T) {
+func TestPollRepliesSkipsFinalizedFromOtherInstance(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
@@ -1073,11 +1073,8 @@ func TestPollRepliesDeliversFinalizedFromOtherInstance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PollReplies: %v", err)
 	}
-	if len(replies) != 1 {
-		t.Fatalf("replies = %d, want 1", len(replies))
-	}
-	if replies[0].Text != "other slaude response" {
-		t.Errorf("reply text = %q, want %q", replies[0].Text, "other slaude response")
+	if len(replies) != 0 {
+		t.Fatalf("replies = %d, want 0 (other instance messages should be skipped)", len(replies))
 	}
 }
 
@@ -1112,7 +1109,7 @@ func TestPollRepliesSkipsActivityFromAllInstances(t *testing.T) {
 	}
 }
 
-func TestPollRepliesStreamingBecomesVisible(t *testing.T) {
+func TestPollRepliesStreamingThenFinalizedSkipped(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
@@ -1134,16 +1131,13 @@ func TestPollRepliesStreamingBecomesVisible(t *testing.T) {
 	// Simulate finalization: update block_id to remove ~ suffix
 	mock.updateBlockID(ts, "slagent-bbbb")
 
-	// Second poll: now the message is finalized and should be delivered
+	// Second poll: finalized slagent message is also skipped (all slagent messages are filtered)
 	replies, err := thread.PollReplies()
 	if err != nil {
 		t.Fatalf("PollReplies: %v", err)
 	}
-	if len(replies) != 1 {
-		t.Fatalf("second poll: replies = %d, want 1", len(replies))
-	}
-	if replies[0].Text != "partial" {
-		t.Errorf("reply text = %q, want %q", replies[0].Text, "partial")
+	if len(replies) != 0 {
+		t.Fatalf("second poll: replies = %d, want 0 (slagent messages should be skipped)", len(replies))
 	}
 }
 
