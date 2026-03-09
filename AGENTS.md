@@ -67,9 +67,15 @@ Module: `github.com/sttts/slagent`
 - Trailing `?` replaced with ` ❓` on finish for question turns.
 - Multi-choice AskUserQuestion: separate prompt message with numbered emoji reactions.
 - ExitPlanMode/EnterPlanMode: prompt with ✅/❌ reactions.
-- Thread parent: `:thread: <title>` (plain text for emoji shortcode rendering).
+- Thread parent: `🧵 <title>` (plain text for emoji shortcode rendering).
 - Code diffs (Edit/Write): posted as separate messages with ``` blocks.
 - Use `--debug` flag to see raw JSON events for troubleshooting.
+
+## Documentation
+- User-facing knowledge (commands, syntax, usage) goes in `README.md`.
+- `AGENTS.md` references README for UX and adds implementation details only.
+- `doc/designs/` contains detailed design docs — keep in sync with code changes.
+- When changing behavior, update README.md, AGENTS.md, and relevant design docs together.
 
 ## Coding Style
 - Comment style: one-line comment above small blocks of logically connected lines.
@@ -115,22 +121,18 @@ The activity message is managed by Turn (compat backend). Tasks message is manag
 - Format: `📋 Tasks\n☐ pending\n⏳ in_progress\n✅ completed`
 
 ## Emoji-Prefix Instance Targeting
-- Messages in a thread can be targeted at a specific slaude instance using `:shortcode::` prefix.
-- Format: `:fox_face:: message` (renders as `🦊: message` in Slack).
-- Also works with @mentions: `@user :fox_face:: message`.
-- Non-command messages are always delivered to ALL instances (with original text including prefix). The system prompt tells Claude to ignore messages prefixed with another instance's emoji.
-- Commands (`:fox_face:: /open`) are instance-exclusive — only the targeted instance receives them.
-- Unknown `/commands` are forwarded to Claude via `Reply.Command`.
-- Parsing: `parseInstancePrefix()` in `thread.go`, used by `pollOnce()` in `reply.go`.
+See README.md for user-facing syntax (`:shortcode::` prefix, `/open`, `/lock` commands, title format).
+
+Implementation:
+- `parseInstancePrefix()` in `thread.go`, used by `pollOnce()` in `reply.go`.
+- Non-command messages delivered to ALL instances; commands are instance-exclusive.
+- Unknown `/commands` forwarded to Claude via `Reply.Command`.
 
 ## Thread Access Control
-- Default: locked to owner only.
-- `/open` — open for everyone. `/open <@U1> <@U2>` — allow specific users (additive).
-- `/lock` — lock to owner only (resets). `/lock <@U1>` — ban specific users.
-- `/close` — alias for `/lock`.
-- `/open` unbans a banned user. `/lock` removes from allowed.
-- Owner can never be banned.
-- Thread title reflects state: `:instanceID:🔒🧵 Topic` (locked) / `:instanceID:🧵 Topic` (open).
-- Selective: `:instanceID:🧵 <@U1> <@U2> Topic`. Bans: `(🔒 <@U3>)` appended.
-- Title is parsed on `Resume()` to recover access state.
-- Other slaude instances are subject to the same access rules via `isAuthorized()`.
+See README.md for commands and title format.
+
+Implementation:
+- `handleCommand()` in `thread.go` processes `/open`, `/lock`, `/close`.
+- `isAuthorized()` checks banned → openAccess → owner → allowedUsers.
+- `formatTitle()` / `parseTitle()` encode/decode access state in thread parent.
+- Title parsed on `Resume()` to recover state. Other slaude instances subject to same rules.

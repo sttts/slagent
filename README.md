@@ -80,6 +80,30 @@ Messages without prefix                  →  broadcast to all instances
 
 Regular messages with `:shortcode::` are delivered to all instances, but the system prompt tells non-targeted instances to ignore them. Commands (`/something`) are instance-exclusive — only the targeted instance receives them.
 
+### Thread Access Control
+
+Threads are locked to the owner by default. Use `/open` and `/lock` to control access (via `:shortcode::` targeting):
+
+| Command | Effect |
+|---------|--------|
+| `:fox_face:: /open` | Open thread for everyone |
+| `:fox_face:: /open <@U1> <@U2>` | Allow specific users (additive) |
+| `:fox_face:: /lock` | Lock to owner only (resets all) |
+| `:fox_face:: /lock <@U1>` | Ban specific users |
+| `:fox_face:: /close` | Alias for `/lock` |
+
+Start a thread open for all with `--open`:
+
+```bash
+slaude start --open -c CHANNEL -- "design the API"
+```
+
+Thread title reflects access state:
+- `🔒🧵 Topic` — locked (owner only)
+- `🧵 Topic` — open for all
+- `🧵 @user1 @user2 Topic` — open for specific users
+- `🧵 Topic (🔒 @user)` — with banned users
+
 ## slagent Library
 
 slagent is the Go library that slaude is built on. Use it to build your own Slack-integrated agent UIs.
