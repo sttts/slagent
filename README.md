@@ -9,6 +9,10 @@
 
 **slagent** is a Go library for streaming agent sessions to Slack threads. **slaude** is a CLI built on slagent that mirrors [Claude Code](https://docs.anthropic.com/en/docs/claude-code) sessions to Slack — so your team can watch, comment, and steer from Slack while Claude works.
 
+[![Release](https://github.com/sttts/slagent/actions/workflows/release.yml/badge.svg)](https://github.com/sttts/slagent/actions/workflows/release.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/sttts/slagent)](https://goreportcard.com/report/github.com/sttts/slagent)
+[![License](https://img.shields.io/github/license/sttts/slagent)](LICENSE)
+
 ## Quick Start — slaude
 
 ### Install
