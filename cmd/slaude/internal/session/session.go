@@ -193,6 +193,14 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 				"Your messages appear prefixed with %s in Slack.\n\n"+
 				"Messages prefixed with [Team feedback from Slack] contain input from "+
 				"team members watching the thread.\n\n"+
+				"Instance targeting:\n"+
+				"- :%s:: (with colon after the emoji) explicitly addresses you. Act on these.\n"+
+				"- :other_emoji:: (a different instance's shortcode with colon) explicitly addresses "+
+				"another agent. Ignore these unless directly relevant to your task.\n"+
+				"- :%s:: /command sends a slash command exclusively to you — other instances never see it.\n"+
+				"- %s without a trailing colon is ambiguous — it could be someone talking to you, "+
+				"or just a message mentioning you. Use context to decide whether to respond.\n"+
+				"- Messages without any emoji prefix are broadcast to all instances.\n\n"+
 				"Important behavior rules for Slack:\n"+
 				"- Do NOT acknowledge every message. Only respond when you have something substantive to say.\n"+
 				"- Messages from other agent instances (other slaude sessions in the same thread) "+
@@ -200,7 +208,7 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 				"- Be concise. Slack readers prefer short, focused responses over verbose ones.\n"+
 				"- Do not greet or say hello in response to feedback. Just act on it."+
 				"%s",
-			emoji, instanceID, emoji, ownerCtx)
+			emoji, instanceID, emoji, instanceID, instanceID, emoji, ownerCtx)
 		if idx := findArg(extraArgs, "--system-prompt"); idx >= 0 && idx+1 < len(extraArgs) {
 			extraArgs[idx+1] += "\n\n" + slackCtx
 		} else {
@@ -320,25 +328,53 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 			break
 		}
 
-		// Show in terminal
+		// Separate commands from regular feedback
+		var commands []slagent.Reply
+		var feedback []slagent.Reply
 		for _, r := range replies {
+			if r.Command != "" {
+				commands = append(commands, r)
+			} else {
+				feedback = append(feedback, r)
+			}
+		}
+
+		// Show in terminal
+		for _, r := range commands {
+			ui.SlackMessage(r.User, r.Command)
+		}
+		for _, r := range feedback {
 			ui.SlackMessage(r.User, r.Text)
 		}
 
-		// Format and send to Claude
-		var sb strings.Builder
-		sb.WriteString("[Team feedback from Slack thread]\n")
-		for _, r := range replies {
-			fmt.Fprintf(&sb, "@%s: %s\n", r.User, r.Text)
+		// Send commands directly to Claude (each as its own turn)
+		for _, r := range commands {
+			if err := proc.Send(r.Command); err != nil {
+				ui.Error(fmt.Sprintf("send command to claude: %v", err))
+				break
+			}
+			if err := sess.readTurn(); err != nil {
+				ui.Error(fmt.Sprintf("reading response: %v", err))
+				break
+			}
 		}
 
-		if err := proc.Send(sb.String()); err != nil {
-			ui.Error(fmt.Sprintf("send to claude: %v", err))
-			break
-		}
-		if err := sess.readTurn(); err != nil {
-			ui.Error(fmt.Sprintf("reading response: %v", err))
-			break
+		// Send regular feedback as team messages
+		if len(feedback) > 0 {
+			var sb strings.Builder
+			sb.WriteString("[Team feedback from Slack thread]\n")
+			for _, r := range feedback {
+				fmt.Fprintf(&sb, "@%s: %s\n", r.User, r.Text)
+			}
+
+			if err := proc.Send(sb.String()); err != nil {
+				ui.Error(fmt.Sprintf("send to claude: %v", err))
+				break
+			}
+			if err := sess.readTurn(); err != nil {
+				ui.Error(fmt.Sprintf("reading response: %v", err))
+				break
+			}
 		}
 	}
 

@@ -139,10 +139,31 @@ activity.
 - Skip parent message and already-seen messages (tracked via `lastTS`)
 - Classify slagent blocks by kind and source instance (see above)
 - Skip bot messages (`BotID != ""`)
-- Handle `!open` / `!close` commands (toggle open access)
+- Parse `:shortcode::` prefix for instance targeting (see below)
+- Handle `/open` / `/close` commands (toggle open access)
 - Check authorization: owner only by default, all participants if open access
 
 User display names are resolved via `users.info` and cached.
+
+## Emoji-Prefix Instance Targeting
+
+Messages can be targeted at a specific slaude instance using `:shortcode::` prefix:
+
+```
+:fox_face:: do this task       →  renders as  🦊: do this task
+:dog:: /compact                →  renders as  🐶: /compact
+<@U123> :fox_face:: hello      →  @mention + targeted
+```
+
+Parsing is done by `parseInstancePrefix()` in `thread.go`:
+- Matches `:shortcode::` where shortcode is a known identity emoji
+- Non-command messages are delivered to ALL instances with the original text
+  (prefix included). The system prompt tells Claude to ignore messages
+  prefixed with another instance's emoji.
+- Commands (`/open`, `/close`, `/compact`, etc.) are instance-exclusive:
+  only the targeted instance receives them.
+- `/open` and `/close` are handled by slaude. Unknown `/commands` are
+  forwarded to Claude via `Reply.Command`.
 
 ## Channel Package
 

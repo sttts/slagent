@@ -113,3 +113,12 @@ The activity message is managed by Turn (compat backend). Tasks message is manag
 - Render as a persistent Slack message below activity, above questions.
 - TodoWrite replaces entire list; TaskCreate/TaskUpdate modify individual items.
 - Format: `📋 Tasks\n☐ pending\n⏳ in_progress\n✅ completed`
+
+## Emoji-Prefix Instance Targeting
+- Messages in a thread can be targeted at a specific slaude instance using `:shortcode::` prefix.
+- Format: `:fox_face:: message` (renders as `🦊: message` in Slack).
+- Also works with @mentions: `@user :fox_face:: message`.
+- Non-command messages are always delivered to ALL instances (with original text including prefix). The system prompt tells Claude to ignore messages prefixed with another instance's emoji.
+- Commands (`:fox_face:: /open`) are instance-exclusive — only the targeted instance receives them.
+- `/open`, `/close` are slaude commands. Unknown `/commands` are forwarded to Claude via `Reply.Command`.
+- Parsing: `parseInstancePrefix()` in `thread.go`, used by `pollOnce()` in `reply.go`.

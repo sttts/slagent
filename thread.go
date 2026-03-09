@@ -476,10 +476,67 @@ func (t *Thread) isAuthorized(userID string) bool {
 	return userID == t.ownerID
 }
 
-// handleCommand processes !open / !close commands. Returns true if the message was a command.
-func (t *Thread) handleCommand(userID, text string) bool {
-	cmd := strings.TrimSpace(text)
-	if cmd != "!open" && cmd != "!close" {
+// parseInstancePrefix checks if text starts with a :shortcode:: prefix (emoji + colon).
+// The format is ":shortcode:: message" which renders in Slack as "🦊: message".
+// Returns the shortcode (instance ID), remaining text, and whether a prefix was found.
+func parseInstancePrefix(text string) (instanceID, rest string, targeted bool) {
+	if !strings.HasPrefix(text, ":") {
+		return "", text, false
+	}
+
+	// Find the closing colon of the shortcode
+	end := strings.Index(text[1:], ":")
+	if end < 0 {
+		return "", text, false
+	}
+	shortcode := text[1 : end+1]
+
+	// Verify it's a known identity emoji
+	if _, ok := identityEmojis[shortcode]; !ok {
+		return "", text, false
+	}
+
+	rest = text[end+2:] // skip past ":shortcode:"
+
+	// Require colon after shortcode (":fox_face::" not ":fox_face:")
+	if !strings.HasPrefix(rest, ":") {
+		return "", text, false
+	}
+	rest = rest[1:]
+
+	// Strip optional space after the colon
+	if strings.HasPrefix(rest, " ") {
+		rest = rest[1:]
+	}
+	return shortcode, rest, true
+}
+
+// parseMessage extracts the target instance and cleaned text from a Slack message.
+// Strips leading @mentions, then checks for :shortcode: prefix.
+func parseMessage(text string) (instanceID, cleaned string, targeted bool) {
+	s := text
+
+	// Strip leading @mentions (Slack format: <@U123>)
+	for strings.HasPrefix(s, "<@") {
+		if idx := strings.Index(s, ">"); idx >= 0 {
+			s = strings.TrimLeft(s[idx+1:], " ")
+		} else {
+			break
+		}
+	}
+	return parseInstancePrefix(s)
+}
+
+// handleCommand processes /open and /close commands.
+// Returns true if the message was a known command.
+func (t *Thread) handleCommand(userID, cmd string) bool {
+	cmd = strings.TrimSpace(cmd)
+	switch cmd {
+	case "/open":
+		// allow
+	case "/close":
+		// allow
+	default:
 		return false
 	}
 
@@ -491,6 +548,6 @@ func (t *Thread) handleCommand(userID, text string) bool {
 		return false
 	}
 
-	t.openAccess = cmd == "!open"
+	t.openAccess = cmd == "/open"
 	return true
 }

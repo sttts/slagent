@@ -27,9 +27,10 @@ const (
 
 // Reply is a message from a thread participant.
 type Reply struct {
-	User   string // Display name
-	UserID string // Slack user ID
-	Text   string
+	User    string // Display name
+	UserID  string // Slack user ID
+	Text    string
+	Command string // If set, a /command to forward (not team feedback)
 }
 
 // ThreadOption configures a Thread.

@@ -3,6 +3,7 @@ package slagent
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	slackapi "github.com/slack-go/slack"
@@ -100,8 +101,32 @@ func (t *Thread) pollOnce() ([]Reply, error) {
 			continue
 		}
 
-		// Handle !open / !close commands
-		if t.handleCommand(msg.User, msg.Text) {
+		// Parse :shortcode:: prefix targeting
+		targetID, rest, targeted := parseMessage(msg.Text)
+		if targeted && strings.HasPrefix(rest, "/") {
+			// Commands are instance-exclusive
+			if targetID != t.instanceID {
+				t.advanceLastTS(msg.Timestamp)
+				continue
+			}
+
+			// Handle slaude commands (/open, /close)
+			if t.handleCommand(msg.User, rest) {
+				t.advanceLastTS(msg.Timestamp)
+				continue
+			}
+
+			// Unknown command — forward to Claude
+			if !t.isAuthorized(msg.User) {
+				t.advanceLastTS(msg.Timestamp)
+				continue
+			}
+			user := t.resolveUser(msg.User)
+			replies = append(replies, Reply{
+				User:    user,
+				UserID:  msg.User,
+				Command: rest,
+			})
 			t.advanceLastTS(msg.Timestamp)
 			continue
 		}
@@ -112,6 +137,9 @@ func (t *Thread) pollOnce() ([]Reply, error) {
 			continue
 		}
 
+		// Non-command messages are delivered to all instances.
+		// Keep original text so Claude sees the :shortcode:: prefix
+		// and knows who the message is meant for.
 		user := t.resolveUser(msg.User)
 		replies = append(replies, Reply{
 			User:   user,

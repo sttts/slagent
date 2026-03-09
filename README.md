@@ -68,6 +68,18 @@ slaude start -- "refactor the auth module"
 
 Everything after `--` is passed through to the Claude subprocess. This means slaude doesn't need to know about every Claude flag — you control `--permission-mode`, `--resume`, `--system-prompt`, etc. directly.
 
+### Multi-Instance Threads
+
+Multiple slaude instances can share a Slack thread. Each instance gets a unique identity emoji (e.g. 🦊, 🐶). To target a specific instance, use `:shortcode::` prefix:
+
+```
+:fox_face:: focus on the auth module     →  only the 🦊 instance sees this
+:dog:: run the tests                     →  only the 🐶 instance sees this
+Messages without prefix                  →  delivered to all instances
+```
+
+Commands can also be targeted: `:fox_face:: /open` sends `/open` to the fox instance only.
+
 ## slagent Library
 
 slagent is the Go library that slaude is built on. Use it to build your own Slack-integrated agent UIs.

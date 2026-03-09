@@ -196,9 +196,10 @@ Main Loop:
      h. On result: finalize turn, repost tasks, return
   3. Start Slack poller (background goroutine)
   4. Wait for Slack replies (blocking)
-  5. Show replies in terminal, format as [Team feedback from Slack]
-  6. Send to Claude via stdin
-  7. Read turn (go to step 2)
+  5. Separate commands from feedback:
+     a. Commands (`Reply.Command`): sent directly to Claude, each as its own turn
+     b. Feedback (`Reply.Text`): wrapped in [Team feedback from Slack], sent as one message
+  6. Read turn (go to step 2)
 ```
 
 ## Permission Approval via MCP
@@ -292,6 +293,43 @@ approve or reject.
 Not posted as a separate prompt. The question text is streamed as the
 turn's text message with `MarkQuestion(prefix)` adding `@mention` and
 trailing `❓`.
+
+## Emoji-Prefix Instance Targeting
+
+When multiple slaude instances share a thread, messages can be directed to a
+specific instance using the `:shortcode::` prefix (renders as `🦊:` in Slack).
+
+### Format
+
+```
+:fox_face:: do this task         →  targeted at the fox instance
+:dog:: /compact                  →  /compact command to the dog instance
+<@U123> :fox_face:: hello        →  @mention + targeted message
+regular message                  →  broadcast to all instances
+```
+
+### Parsing
+
+Handled by `parseInstancePrefix()` in slagent's `thread.go`:
+1. Strip leading `<@...>` mentions
+2. Match `:shortcode::` where shortcode is a known identity emoji
+3. If the text starts with `/`, it's a command — instance-exclusive:
+   - Only the targeted instance receives it
+   - `/open`, `/close`: handled by slaude (thread access control)
+   - Unknown `/commands`: forwarded to Claude via `Reply.Command`
+4. Non-command messages are delivered to ALL instances with the original
+   text (prefix included). The system prompt tells Claude to ignore
+   messages prefixed with another instance's emoji.
+
+### Session Handling
+
+In `session.go`, replies are split into commands and feedback:
+- Commands are sent directly to Claude stdin (one turn per command)
+- Regular feedback is batched as `[Team feedback from Slack]`
+
+The system prompt tells Claude about the `:shortcode::` convention:
+messages with its own emoji should be acted on, messages with another
+instance's emoji should generally be ignored.
 
 ## Dependencies
 

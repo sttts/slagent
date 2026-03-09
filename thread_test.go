@@ -62,25 +62,25 @@ func TestThreadPermissions(t *testing.T) {
 		t.Error("other user should not be authorized")
 	}
 
-	// !open command from owner
-	if !thread.handleCommand("U_OWNER", "!open") {
-		t.Error("!open from owner should be handled")
+	// /open command from owner
+	if !thread.handleCommand("U_OWNER", "/open") {
+		t.Error("/open from owner should be handled")
 	}
 	if !thread.isAuthorized("U_OTHER") {
-		t.Error("other user should be authorized after !open")
+		t.Error("other user should be authorized after /open")
 	}
 
-	// !close from owner
-	if !thread.handleCommand("U_OWNER", "!close") {
-		t.Error("!close from owner should be handled")
+	// /close from owner
+	if !thread.handleCommand("U_OWNER", "/close") {
+		t.Error("/close from owner should be handled")
 	}
 	if thread.isAuthorized("U_OTHER") {
-		t.Error("other user should not be authorized after !close")
+		t.Error("other user should not be authorized after /close")
 	}
 
-	// !open from non-owner is ignored
-	if thread.handleCommand("U_OTHER", "!open") {
-		t.Error("!open from non-owner should not be handled")
+	// /open from non-owner is ignored
+	if thread.handleCommand("U_OTHER", "/open") {
+		t.Error("/open from non-owner should not be handled")
 	}
 }
 
@@ -258,12 +258,15 @@ func TestPollRepliesOpenClose(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
-	thread := NewThread(mock.client(), "xoxc-test", "C_TEST", WithOwner("U_OWNER"))
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+		WithOwner("U_OWNER"),
+		WithInstanceID("fox_face"),
+	)
 	thread.Start("Test")
 	threadTS := thread.ThreadTS()
 
-	// Owner sends !open
-	mock.injectReply("C_TEST", threadTS, "U_OWNER", "!open")
+	// Owner sends :fox_face:: /open (emoji-prefix command)
+	mock.injectReply("C_TEST", threadTS, "U_OWNER", ":fox_face:: /open")
 
 	// Other user sends a message
 	mock.injectReply("C_TEST", threadTS, "U_OTHER", "hello!")
@@ -273,7 +276,7 @@ func TestPollRepliesOpenClose(t *testing.T) {
 		t.Fatalf("PollReplies: %v", err)
 	}
 
-	// !open is consumed as command, then U_OTHER's message comes through
+	// /open is consumed as command, then U_OTHER's message comes through
 	if len(replies) != 1 {
 		t.Fatalf("replies = %d, want 1", len(replies))
 	}
@@ -486,6 +489,164 @@ func TestRepliesBlockingReturnsOnReply(t *testing.T) {
 	}
 	if len(replies) != 1 || replies[0].Text != "delayed reply" {
 		t.Errorf("unexpected replies: %v", replies)
+	}
+}
+
+func TestParseInstancePrefix(t *testing.T) {
+	tests := []struct {
+		text       string
+		wantID     string
+		wantRest   string
+		wantTarget bool
+	}{
+		// Targeted with colon + space (renders as 🦊: hello)
+		{":fox_face:: hello", "fox_face", "hello", true},
+		// Targeted with colon, no space
+		{":fox_face::hello", "fox_face", "hello", true},
+		// Targeted with colon before /command
+		{":fox_face:: /open", "fox_face", "/open", true},
+		// Without trailing colon — NOT targeted (must be explicit)
+		{":fox_face: hello", "", ":fox_face: hello", false},
+		// No prefix — not targeted
+		{"hello world", "", "hello world", false},
+		// Unknown shortcode — not targeted
+		{":unknown_thing:: hello", "", ":unknown_thing:: hello", false},
+		// Empty string
+		{"", "", "", false},
+		// Just the shortcode with colon, no rest
+		{":dog:: ", "dog", "", true},
+		{":dog::", "dog", "", true},
+	}
+	for _, tt := range tests {
+		id, rest, targeted := parseInstancePrefix(tt.text)
+		if id != tt.wantID || rest != tt.wantRest || targeted != tt.wantTarget {
+			t.Errorf("parseInstancePrefix(%q) = (%q, %q, %v), want (%q, %q, %v)",
+				tt.text, id, rest, targeted, tt.wantID, tt.wantRest, tt.wantTarget)
+		}
+	}
+}
+
+func TestParseMessageStripsAtMentions(t *testing.T) {
+	tests := []struct {
+		text       string
+		wantID     string
+		wantRest   string
+		wantTarget bool
+	}{
+		// @mention then :shortcode::
+		{"<@U123> :fox_face:: do something", "fox_face", "do something", true},
+		// Multiple @mentions
+		{"<@U123> <@U456> :dog:: hello", "dog", "hello", true},
+		// @mention without shortcode — not targeted
+		{"<@U123> hello", "", "hello", false},
+		// No @mention, with colon
+		{":cat:: meow", "cat", "meow", true},
+	}
+	for _, tt := range tests {
+		id, rest, targeted := parseMessage(tt.text)
+		if id != tt.wantID || rest != tt.wantRest || targeted != tt.wantTarget {
+			t.Errorf("parseMessage(%q) = (%q, %q, %v), want (%q, %q, %v)",
+				tt.text, id, rest, targeted, tt.wantID, tt.wantRest, tt.wantTarget)
+		}
+	}
+}
+
+func TestPollRepliesEmojiPrefixTargeting(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+		WithInstanceID("fox_face"),
+	)
+	thread.Start("Test")
+	threadTS := thread.ThreadTS()
+
+	// Message targeted at this instance — delivered with original text
+	mock.injectReply("C_TEST", threadTS, "U_HUMAN", ":fox_face:: do this")
+
+	// Message targeted at another instance — also delivered (non-command)
+	mock.injectReply("C_TEST", threadTS, "U_HUMAN", ":dog:: do that")
+
+	// Untargeted message — delivered as-is
+	mock.injectReply("C_TEST", threadTS, "U_HUMAN", "general message")
+
+	replies, err := thread.PollReplies()
+	if err != nil {
+		t.Fatalf("PollReplies: %v", err)
+	}
+
+	// All 3 messages delivered (non-command messages are broadcast)
+	if len(replies) != 3 {
+		t.Fatalf("replies = %d, want 3", len(replies))
+	}
+
+	// All keep original text (prefix included so Claude sees targeting)
+	if replies[0].Text != ":fox_face:: do this" {
+		t.Errorf("replies[0].Text = %q, want %q", replies[0].Text, ":fox_face:: do this")
+	}
+	if replies[1].Text != ":dog:: do that" {
+		t.Errorf("replies[1].Text = %q, want %q", replies[1].Text, ":dog:: do that")
+	}
+	if replies[2].Text != "general message" {
+		t.Errorf("replies[2].Text = %q, want %q", replies[2].Text, "general message")
+	}
+}
+
+func TestPollRepliesCommandOnlyForTargetInstance(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+		WithInstanceID("fox_face"),
+	)
+	thread.Start("Test")
+	threadTS := thread.ThreadTS()
+
+	// Command targeted at another instance — should be ignored
+	mock.injectReply("C_TEST", threadTS, "U_HUMAN", ":dog:: /compact")
+
+	// Command targeted at this instance — should be forwarded
+	mock.injectReply("C_TEST", threadTS, "U_HUMAN", ":fox_face:: /compact")
+
+	replies, err := thread.PollReplies()
+	if err != nil {
+		t.Fatalf("PollReplies: %v", err)
+	}
+
+	if len(replies) != 1 {
+		t.Fatalf("replies = %d, want 1", len(replies))
+	}
+	if replies[0].Command != "/compact" {
+		t.Errorf("replies[0].Command = %q, want %q", replies[0].Command, "/compact")
+	}
+}
+
+func TestPollRepliesEmojiPrefixCommand(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+		WithInstanceID("fox_face"),
+	)
+	thread.Start("Test")
+	threadTS := thread.ThreadTS()
+
+	// Unknown /command targeted at this instance — forwarded to Claude
+	mock.injectReply("C_TEST", threadTS, "U_HUMAN", ":fox_face:: /compact")
+
+	replies, err := thread.PollReplies()
+	if err != nil {
+		t.Fatalf("PollReplies: %v", err)
+	}
+
+	if len(replies) != 1 {
+		t.Fatalf("replies = %d, want 1", len(replies))
+	}
+	if replies[0].Command != "/compact" {
+		t.Errorf("replies[0].Command = %q, want %q", replies[0].Command, "/compact")
+	}
+	if replies[0].Text != "" {
+		t.Errorf("replies[0].Text = %q, want empty", replies[0].Text)
 	}
 }
 
