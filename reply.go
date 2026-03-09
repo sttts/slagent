@@ -77,7 +77,7 @@ func (t *Thread) pollOnce() ([]Reply, error) {
 		}
 
 		// Classify slagent blocks by kind and source instance
-		kind, _ := classifyBlocks(msg.Blocks)
+		kind, sourceID := classifyBlocks(msg.Blocks)
 		switch kind {
 		case blockActivity:
 			// Activity messages: always skip from all instances
@@ -87,9 +87,12 @@ func (t *Thread) pollOnce() ([]Reply, error) {
 			// Streaming text: not finalized yet, skip (don't advance — re-check next poll)
 			continue
 		case blockFinal:
-			// All slagent messages (own or other instances) — skip
-			t.advanceLastTS(msg.Timestamp)
-			continue
+			if sourceID == t.instanceID {
+				// Own finalized messages — skip
+				t.advanceLastTS(msg.Timestamp)
+				continue
+			}
+			// Other instances' finalized text — deliver so agent perceives it
 		}
 
 		// Skip bot messages

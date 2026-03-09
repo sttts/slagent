@@ -54,7 +54,7 @@ func (u *UI) Banner(opts BannerOpts) {
 	}
 	fmt.Fprintln(u.w)
 	if opts.Identity != "" {
-		fmt.Fprintf(u.w, "%s  🏷️  Identity: %s%s\n", dim, opts.Identity, reset)
+		fmt.Fprintf(u.w, "%s  🏷️ Identity: %s%s\n", dim, opts.Identity, reset)
 	}
 	if opts.Channel != "" {
 		fmt.Fprintf(u.w, "%s  💬 Channel:  %s%s\n", dim, opts.Channel, reset)

@@ -8,6 +8,11 @@ runs a terminal session while Claude's responses, thinking state, and tool
 activity are mirrored to a Slack thread. Thread replies from teammates are
 injected back into Claude's conversation.
 
+Multiple slaude instances can share a single thread, each with a unique
+identity emoji. Agents perceive each other's output for coordination while
+the system prompt controls which messages they act on. Commands (`/compact`,
+`/status`) are instance-exclusive via `:emoji::` targeting.
+
 ## Architecture
 
 ```
@@ -290,19 +295,20 @@ Messages at the bottom of the thread follow this order:
 ### Reply Filtering
 
 The poller (`pollOnce()` in `reply.go`) classifies messages by their
-`block_id` prefix (`slagent-{instanceID}`) and filters aggressively:
+`block_id` prefix (`slagent-{instanceID}`) and applies visibility rules:
 
-| Block kind | block_id pattern | Action |
-|---|---|---|
-| Activity | `slagent-{id}~act` | Always skip, advance cursor |
-| Streaming | `slagent-{id}~` | Skip, do NOT advance (re-check next poll) |
-| Finalized | `slagent-{id}` | Always skip (own and other instances), advance cursor |
-| None | no slagent prefix | Process as user message |
+| Block kind | block_id pattern | Own instance | Other instance |
+|---|---|---|---|
+| Activity | `slagent-{id}~act` | Skip, advance cursor | Skip, advance cursor |
+| Streaming | `slagent-{id}~` | Skip, do NOT advance | Skip, do NOT advance |
+| Finalized | `slagent-{id}` | Skip, advance cursor | **Deliver**, advance cursor |
+| None | no slagent prefix | Process as user message | Process as user message |
 
-All slagent messages (activity, streaming, finalized) from all instances are
-hard-filtered. Only non-slagent messages (human users, bots) are delivered
-as replies. This prevents agents from reacting to each other's output,
-thinking indicators, or activity messages.
+Activity and streaming messages are always hard-filtered from all instances.
+Finalized text from **other** instances is delivered as a reply so the agent
+perceives what the other agent said. The **system prompt** controls behavior:
+messages addressed to another instance (`:other_emoji::`) should be read for
+context but produce zero output.
 
 Bot messages (`msg.BotID != ""`) are also skipped.
 
@@ -328,12 +334,50 @@ Not posted as a separate prompt. The question text is streamed as the
 turn's text message with `MarkQuestion(prefix)` adding `@mention` and
 trailing `❓`.
 
-## Emoji-Prefix Instance Targeting
+## Multi-Instance Threads
 
-When multiple slaude instances share a thread, messages can be directed to a
-specific instance using the `:shortcode::` prefix (renders as `🦊:` in Slack).
+Multiple slaude instances can share a single Slack thread, each identified by
+a unique emoji (`:dog:`, `:rhinoceros:`, etc.). This enables scenarios like:
+- Two agents working on different parts of the same codebase, coordinating
+  through the shared thread
+- One agent in plan mode reviewing while the other implements
+- Pair-debugging where each agent has different context or working directory
 
-### Format
+Each instance runs its own Claude Code subprocess on its own machine. The
+thread is the shared coordination surface.
+
+### Message Flow
+
+Every instance sees the full thread, but messages are classified at two levels:
+
+**Hard filtering (code in `reply.go`)** — controls what the agent receives:
+
+| Message type | Delivered to agent? |
+|---|---|
+| Own activity / streaming | No |
+| Own finalized text | No |
+| Other instance activity / streaming | No |
+| Other instance finalized text | **Yes** — agent perceives it |
+| Human messages (targeted or broadcast) | **Yes** |
+| Human `/commands` to another instance | No (instance-exclusive) |
+
+**Soft filtering (system prompt)** — controls whether the agent acts:
+
+| Message pattern | Agent behavior |
+|---|---|
+| `:own_emoji::` from human | Act on it |
+| `:other_emoji::` from human | Perceive but produce zero output |
+| `:other_emoji:` finalized text | Perceive for context, don't respond |
+| Untargeted human message | Act normally |
+
+The distinction matters: hard filtering prevents noise (activity, streaming,
+own output). Soft filtering via the system prompt lets agents be aware of
+each other's work without reacting to every message.
+
+### Emoji-Prefix Targeting
+
+Messages are directed to a specific instance using `:shortcode::` (double
+colon, renders as `🦊:` in Slack):
 
 ```
 :fox_face:: do this task         →  addressed to fox (all see it, others ignore via prompt)
@@ -341,6 +385,11 @@ specific instance using the `:shortcode::` prefix (renders as `🦊:` in Slack).
 <@U123> :fox_face:: hello        →  @mention + addressed to fox
 regular message                  →  broadcast to all instances
 ```
+
+The system auto-prefixes each agent's output with `:emoji:` (single space),
+so the convention is:
+- `:emoji:` (space) = **FROM** that agent (auto-prepended)
+- `:emoji::` (colon) = **TO** that agent (typed by human or another agent)
 
 ### Parsing
 
@@ -363,10 +412,6 @@ Handled by `parseInstancePrefix()` in slagent's `thread.go`:
 In `session.go`, replies are split into commands and feedback:
 - Commands are sent directly to Claude stdin (one turn per command)
 - Regular feedback is batched as `[Team feedback from Slack]`
-
-The system prompt tells Claude about the `:shortcode::` convention:
-messages with its own emoji should be acted on, messages with another
-instance's emoji should generally be ignored.
 
 ## Thread Access Control
 

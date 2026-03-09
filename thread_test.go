@@ -1056,7 +1056,7 @@ func TestPollRepliesSkipsStreamingMessages(t *testing.T) {
 	}
 }
 
-func TestPollRepliesSkipsFinalizedFromOtherInstance(t *testing.T) {
+func TestPollRepliesDeliversFinalizedFromOtherInstance(t *testing.T) {
 	mock := newMockSlack()
 	defer mock.close()
 
@@ -1066,15 +1066,40 @@ func TestPollRepliesSkipsFinalizedFromOtherInstance(t *testing.T) {
 	thread.Start("Test")
 	threadTS := thread.ThreadTS()
 
-	// Another slaude instance posts a finalized message (no suffix)
+	// Another slaude instance posts a finalized message (no suffix) — should be delivered
 	mock.injectSlagentReply("C_TEST", threadTS, "other slaude response", "slagent-bbbb")
 
 	replies, err := thread.PollReplies()
 	if err != nil {
 		t.Fatalf("PollReplies: %v", err)
 	}
+	if len(replies) != 1 {
+		t.Fatalf("replies = %d, want 1 (other instance finalized should be delivered)", len(replies))
+	}
+	if replies[0].Text != "other slaude response" {
+		t.Errorf("reply text = %q, want %q", replies[0].Text, "other slaude response")
+	}
+}
+
+func TestPollRepliesSkipsFinalizedFromOwnInstance(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+		WithInstanceID("aaaa"),
+	)
+	thread.Start("Test")
+	threadTS := thread.ThreadTS()
+
+	// Own finalized message — should be skipped
+	mock.injectSlagentReply("C_TEST", threadTS, "my own response", "slagent-aaaa")
+
+	replies, err := thread.PollReplies()
+	if err != nil {
+		t.Fatalf("PollReplies: %v", err)
+	}
 	if len(replies) != 0 {
-		t.Fatalf("replies = %d, want 0 (other instance messages should be skipped)", len(replies))
+		t.Fatalf("replies = %d, want 0 (own finalized should be skipped)", len(replies))
 	}
 }
 
@@ -1131,13 +1156,173 @@ func TestPollRepliesStreamingThenFinalizedSkipped(t *testing.T) {
 	// Simulate finalization: update block_id to remove ~ suffix
 	mock.updateBlockID(ts, "slagent-bbbb")
 
-	// Second poll: finalized slagent message is also skipped (all slagent messages are filtered)
+	// Second poll: finalized message from other instance is delivered
 	replies, err := thread.PollReplies()
 	if err != nil {
 		t.Fatalf("PollReplies: %v", err)
 	}
-	if len(replies) != 0 {
-		t.Fatalf("second poll: replies = %d, want 0 (slagent messages should be skipped)", len(replies))
+	if len(replies) != 1 {
+		t.Fatalf("second poll: replies = %d, want 1 (other instance finalized should be delivered)", len(replies))
+	}
+	if replies[0].Text != "partial" {
+		t.Errorf("reply text = %q, want %q", replies[0].Text, "partial")
+	}
+}
+
+// Tests for multi-instance message visibility rules:
+// - Own finalized: skip (never see your own output)
+// - Own streaming: skip (don't advance cursor)
+// - Own activity: skip
+// - Other finalized: DELIVER (agent perceives, system prompt controls behavior)
+// - Other streaming: skip (not finalized yet, don't advance cursor)
+// - Other activity: skip
+// - Human messages: always deliver (subject to authorization)
+
+func TestMultiInstanceVisibility(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+		WithInstanceID("dog"),
+	)
+	thread.Start("Test")
+	threadTS := thread.ThreadTS()
+
+	// Own activity — skip
+	mock.injectSlagentReply("C_TEST", threadTS, "reading file", "slagent-dog~act")
+
+	// Other activity — skip
+	mock.injectSlagentReply("C_TEST", threadTS, "thinking...", "slagent-rhino~act")
+
+	// Own streaming — skip
+	mock.injectSlagentReply("C_TEST", threadTS, "partial own text", "slagent-dog~")
+
+	// Other streaming — skip (not finalized)
+	mock.injectSlagentReply("C_TEST", threadTS, "partial other text", "slagent-rhino~")
+
+	// Own finalized — skip
+	mock.injectSlagentReply("C_TEST", threadTS, "my final response", "slagent-dog")
+
+	// Other finalized — DELIVER
+	mock.injectSlagentReply("C_TEST", threadTS, ":rhinoceros: I finished the task", "slagent-rhino")
+
+	// Human message — DELIVER
+	mock.injectReply("C_TEST", threadTS, "U_HUMAN", "looks good")
+
+	replies, err := thread.PollReplies()
+	if err != nil {
+		t.Fatalf("PollReplies: %v", err)
+	}
+	if len(replies) != 2 {
+		t.Fatalf("replies = %d, want 2 (other finalized + human)", len(replies))
+	}
+	if replies[0].Text != ":rhinoceros: I finished the task" {
+		t.Errorf("reply[0] text = %q, want other instance finalized", replies[0].Text)
+	}
+	if replies[1].Text != "looks good" {
+		t.Errorf("reply[1] text = %q, want human message", replies[1].Text)
+	}
+}
+
+func TestMultiInstanceAddressedToOther(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+		WithInstanceID("dog"),
+	)
+	thread.Start("Test")
+	threadTS := thread.ThreadTS()
+
+	// Human addresses rhino — delivered (dog perceives, system prompt says don't act)
+	mock.injectReply("C_TEST", threadTS, "U_HUMAN", ":rhinoceros:: do this task")
+
+	// Human addresses dog — delivered (dog acts on it)
+	mock.injectReply("C_TEST", threadTS, "U_HUMAN", ":dog:: do that task")
+
+	// Untargeted — delivered (dog acts normally)
+	mock.injectReply("C_TEST", threadTS, "U_HUMAN", "general update")
+
+	replies, err := thread.PollReplies()
+	if err != nil {
+		t.Fatalf("PollReplies: %v", err)
+	}
+
+	// All 3 non-command messages are delivered
+	if len(replies) != 3 {
+		t.Fatalf("replies = %d, want 3", len(replies))
+	}
+	if replies[0].Text != ":rhinoceros:: do this task" {
+		t.Errorf("reply[0] = %q, want addressed-to-other delivered with prefix", replies[0].Text)
+	}
+	if replies[1].Text != ":dog:: do that task" {
+		t.Errorf("reply[1] = %q, want addressed-to-self delivered with prefix", replies[1].Text)
+	}
+	if replies[2].Text != "general update" {
+		t.Errorf("reply[2] = %q, want untargeted message", replies[2].Text)
+	}
+}
+
+func TestMultiInstanceCommandsAreExclusive(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+		WithInstanceID("dog"),
+	)
+	thread.Start("Test")
+	threadTS := thread.ThreadTS()
+
+	// Command to rhino — exclusive, dog should NOT see it
+	mock.injectReply("C_TEST", threadTS, "U_HUMAN", ":rhinoceros:: /compact")
+
+	// Command to dog — exclusive, dog SHOULD see it
+	mock.injectReply("C_TEST", threadTS, "U_HUMAN", ":dog:: /status")
+
+	replies, err := thread.PollReplies()
+	if err != nil {
+		t.Fatalf("PollReplies: %v", err)
+	}
+	if len(replies) != 1 {
+		t.Fatalf("replies = %d, want 1 (only dog's command)", len(replies))
+	}
+	if replies[0].Command != "/status" {
+		t.Errorf("reply command = %q, want /status", replies[0].Command)
+	}
+}
+
+func TestMultiInstanceOtherFinalizedThenHuman(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "xoxc-test", "C_TEST",
+		WithInstanceID("dog"),
+	)
+	thread.Start("Test")
+	threadTS := thread.ThreadTS()
+
+	// Other instance responds, then human replies
+	mock.injectSlagentReply("C_TEST", threadTS, ":rhinoceros: done with refactoring", "slagent-rhino")
+	mock.injectReply("C_TEST", threadTS, "U_HUMAN", "great work both of you")
+	mock.injectSlagentReply("C_TEST", threadTS, ":rhinoceros: thanks!", "slagent-rhino")
+
+	replies, err := thread.PollReplies()
+	if err != nil {
+		t.Fatalf("PollReplies: %v", err)
+	}
+
+	// All 3 delivered: 2 from rhino (finalized) + 1 from human
+	if len(replies) != 3 {
+		t.Fatalf("replies = %d, want 3", len(replies))
+	}
+	if replies[0].Text != ":rhinoceros: done with refactoring" {
+		t.Errorf("reply[0] = %q", replies[0].Text)
+	}
+	if replies[1].Text != "great work both of you" {
+		t.Errorf("reply[1] = %q", replies[1].Text)
+	}
+	if replies[2].Text != ":rhinoceros: thanks!" {
+		t.Errorf("reply[2] = %q", replies[2].Text)
 	}
 }
 
