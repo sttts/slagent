@@ -187,6 +187,18 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 			opts = append(opts, slagent.WithThinkingEmoji(wsCfg.ThinkingEmoji))
 		}
 
+		// Apply workspace auto-approve settings (CLI flags override)
+		if cfg.DangerousAutoApprove == "" || cfg.DangerousAutoApprove == "never" {
+			if wsCfg.DangerousAutoApprove != "" {
+				cfg.DangerousAutoApprove = wsCfg.DangerousAutoApprove
+			}
+		}
+		if cfg.DangerousAutoApproveNetwork == "" || cfg.DangerousAutoApproveNetwork == "never" {
+			if wsCfg.DangerousAutoApproveNetwork != "" {
+				cfg.DangerousAutoApproveNetwork = wsCfg.DangerousAutoApproveNetwork
+			}
+		}
+
 		// Pass instance ID for block_id tagging (empty = generate new)
 		if cfg.InstanceID != "" {
 			opts = append(opts, slagent.WithInstanceID(cfg.InstanceID))
@@ -920,7 +932,9 @@ func unquote(s string) string {
 
 // workspaceConfig holds per-workspace settings from ~/.config/slagent/config.yaml.
 type workspaceConfig struct {
-	ThinkingEmoji string // Slack shortcode for thinking indicator (e.g. ":claude-thinking:")
+	ThinkingEmoji              string // Slack shortcode for thinking indicator (e.g. ":claude-thinking:")
+	DangerousAutoApprove        string // "never", "green", "yellow"
+	DangerousAutoApproveNetwork string // "never", "known", "any"
 }
 
 // loadWorkspaceConfig loads workspace-specific settings from config.yaml.
@@ -972,11 +986,14 @@ func parseConfigFile(filePath, workspace string) workspaceConfig {
 			continue
 		}
 
-		// Setting under workspace: "    thinking-emoji: :claude-thinking:" (4-space indent)
+		// Setting under workspace: "    key: value" (4-space indent)
 		if strings.HasPrefix(line, "    ") && currentWorkspace == workspace {
 			if strings.HasPrefix(trimmed, "thinking-emoji:") {
-				value := strings.TrimSpace(strings.TrimPrefix(trimmed, "thinking-emoji:"))
-				cfg.ThinkingEmoji = unquote(value)
+				cfg.ThinkingEmoji = unquote(strings.TrimSpace(strings.TrimPrefix(trimmed, "thinking-emoji:")))
+			} else if strings.HasPrefix(trimmed, "dangerous-auto-approve-network:") {
+				cfg.DangerousAutoApproveNetwork = unquote(strings.TrimSpace(strings.TrimPrefix(trimmed, "dangerous-auto-approve-network:")))
+			} else if strings.HasPrefix(trimmed, "dangerous-auto-approve:") {
+				cfg.DangerousAutoApprove = unquote(strings.TrimSpace(strings.TrimPrefix(trimmed, "dangerous-auto-approve:")))
 			}
 		}
 	}
