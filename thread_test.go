@@ -281,6 +281,22 @@ func TestFormatTitle(t *testing.T) {
 			},
 			want: ":fox_face:🧵 <@U_ALICE> Test Topic (🔒 <@U_EVIL>)",
 		},
+		{
+			name: "with mode suffix",
+			setup: func(th *Thread) {
+				th.modeSuffix = " — 📋 planning"
+			},
+			want: ":fox_face:🔒🧵 Test Topic — 📋 planning",
+		},
+		{
+			name: "mode suffix with bans",
+			setup: func(th *Thread) {
+				th.handleCommand("U_OWNER", "/open")
+				th.handleCommand("U_OWNER", "/lock <@U_EVIL>")
+				th.modeSuffix = " — 📋 planning"
+			},
+			want: ":fox_face:🧵 Test Topic — 📋 planning (🔒 <@U_EVIL>)",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -423,6 +439,99 @@ func TestParseTitleRoundtrip(t *testing.T) {
 	}
 	if !th2.bannedUsers["U_EVIL"] {
 		t.Errorf("roundtrip bannedUsers = %v, want evil", th2.bannedUsers)
+	}
+}
+
+func TestParseTitleStripsModeSuffix(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	tests := []struct {
+		name      string
+		title     string
+		wantTopic string
+	}{
+		{
+			name:      "no mode suffix",
+			title:     ":fox_face:🔒🧵 Build CLI",
+			wantTopic: "Build CLI",
+		},
+		{
+			name:      "with planning suffix",
+			title:     ":fox_face:🔒🧵 Build CLI — 📋 planning",
+			wantTopic: "Build CLI",
+		},
+		{
+			name:      "open with planning suffix",
+			title:     ":fox_face:🧵 Build CLI — 📋 planning",
+			wantTopic: "Build CLI",
+		},
+		{
+			name:      "with bans and planning suffix",
+			title:     ":fox_face:🧵 Build CLI — 📋 planning (🔒 <@U_EVIL>)",
+			wantTopic: "Build CLI",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			th := NewThread(mock.client(), "C_TEST", WithInstanceID("fox_face"))
+			th.parseTitle(tt.title)
+			if th.topic != tt.wantTopic {
+				t.Errorf("topic = %q, want %q", th.topic, tt.wantTopic)
+			}
+		})
+	}
+}
+
+func TestModeSuffixRoundtrip(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	// Format with mode suffix, parse back — topic should be clean
+	th := NewThread(mock.client(), "C_TEST",
+		WithOwner("U_OWNER"),
+		WithInstanceID("fox_face"),
+	)
+	th.topic = "Refactor session"
+	th.modeSuffix = " — 📋 planning"
+
+	label := th.formatTitle()
+	if !strings.Contains(label, " — 📋 planning") {
+		t.Errorf("formatted title should contain mode suffix, got %q", label)
+	}
+
+	// Parse into fresh thread
+	th2 := NewThread(mock.client(), "C_TEST", WithInstanceID("fox_face"))
+	th2.parseTitle(label)
+
+	if th2.topic != "Refactor session" {
+		t.Errorf("roundtrip topic = %q, want %q", th2.topic, "Refactor session")
+	}
+}
+
+func TestModeSuffixWithBansRoundtrip(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	th := NewThread(mock.client(), "C_TEST",
+		WithOwner("U_OWNER"),
+		WithInstanceID("fox_face"),
+	)
+	th.topic = "Design API"
+	th.modeSuffix = " — 📋 planning"
+	th.handleCommand("U_OWNER", "/open")
+	th.handleCommand("U_OWNER", "/lock <@U_EVIL>")
+
+	label := th.formatTitle()
+
+	th2 := NewThread(mock.client(), "C_TEST", WithInstanceID("fox_face"))
+	th2.parseTitle(label)
+
+	if th2.topic != "Design API" {
+		t.Errorf("topic = %q, want %q", th2.topic, "Design API")
+	}
+	if !th2.bannedUsers["U_EVIL"] {
+		t.Errorf("bannedUsers = %v, want U_EVIL", th2.bannedUsers)
 	}
 }
 

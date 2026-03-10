@@ -124,9 +124,10 @@ type Thread struct {
 	openAccess   bool
 	allowedUsers map[string]bool // specific users allowed when not fully open
 	bannedUsers  map[string]bool // explicitly banned users (override openAccess)
-	topic string // parsed topic text (without emojis/mentions)
-	title string // full thread message with shortcodes → Unicode
-	joined       bool           // true if joined/resumed (don't persist access to title)
+	topic      string // parsed topic text (without emojis/mentions)
+	title      string // full thread message with shortcodes → Unicode
+	modeSuffix string // appended to title (e.g. " — 📋 planning")
+	joined     bool   // true if joined/resumed (don't persist access to title)
 
 	// Reply tracking
 	lastTS string
@@ -636,6 +637,11 @@ func (t *Thread) formatTitle() string {
 		label = fmt.Sprintf(":%s:🧵 %s", t.instanceID, title)
 	}
 
+	// Append mode suffix (e.g. " — 📋 planning")
+	if t.modeSuffix != "" {
+		label += t.modeSuffix
+	}
+
 	// Append ban list
 	if len(banned) > 0 {
 		var mentions []string
@@ -717,6 +723,11 @@ func (t *Thread) parseTitle(text string) {
 		}
 	}
 
+	// Strip mode suffix (e.g. " — 📋 planning") — not part of the topic.
+	if idx := strings.LastIndex(t.topic, " — 📋"); idx >= 0 {
+		t.topic = t.topic[:idx]
+	}
+
 	if locked {
 		t.openAccess = false
 		return
@@ -795,6 +806,19 @@ func (t *Thread) AccessMode() string {
 		return fmt.Sprintf("restricted (%d users)", len(t.allowedUsers))
 	}
 	return "locked"
+}
+
+// SetModeSuffix sets a suffix appended to the thread title (e.g. " — 📋 planning")
+// and updates the thread parent message. Pass "" to clear.
+func (t *Thread) SetModeSuffix(suffix string) {
+	t.mu.Lock()
+	old := t.modeSuffix
+	t.modeSuffix = suffix
+	t.mu.Unlock()
+
+	if suffix != old {
+		t.updateTitle()
+	}
 }
 
 // isAuthorized checks whether a user is allowed to interact.

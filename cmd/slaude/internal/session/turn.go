@@ -195,6 +195,18 @@ func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 				}
 			}
 
+			// Track plan mode transitions
+			if s.thread != nil {
+				switch evt.ToolName {
+				case "EnterPlanMode":
+					s.thread.SetModeSuffix(" — 📋 planning")
+					s.thread.Post(s.thread.Emoji() + " 📋 Entered plan mode")
+				case "ExitPlanMode":
+					s.thread.SetModeSuffix("")
+					s.thread.Post(s.thread.Emoji() + " ⚡ Exited plan mode")
+				}
+			}
+
 			if evt.ToolName == "TodoWrite" {
 				s.updateTodos(evt.ToolInput)
 			}
