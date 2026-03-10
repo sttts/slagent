@@ -1178,12 +1178,18 @@ func (s *Session) handlePermission(req *perms.PermissionRequest) *perms.Permissi
 	detail := toolDetail(req.ToolName, string(req.Input))
 
 	// Classify the permission request via AI
+	s.ui.ToolActivity(fmt.Sprintf("  🔐 %s: %s — classifying...", req.ToolName, detail))
 	cls, clsErr := classifyPermission(s.ctx, req.ToolName, req.Input)
 	if clsErr != nil {
 		s.ui.Error(fmt.Sprintf("classification error: %v", clsErr))
 		if s.debugLog != nil {
 			fmt.Fprintf(s.debugLog, "classification_error: %v\n", clsErr)
 		}
+	}
+
+	// If session was cancelled during classification, bail out immediately
+	if s.ctx.Err() != nil {
+		return &perms.PermissionResponse{Behavior: "deny", Message: "session cancelled"}
 	}
 
 	// Build terminal display
