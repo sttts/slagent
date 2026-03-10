@@ -1484,8 +1484,11 @@ func (s *Session) pollQuestion(q *askQuestion, emoji, thinkingEmoji, ownerMentio
 				q.answered = true
 			}
 
-			// Re-add the reaction so owner can click again
-			s.thread.AddReaction(q.msgTS, rName)
+			// Remove all and re-add in order to preserve reaction ordering
+			s.thread.RemoveAllReactions(q.msgTS, q.reactions)
+			for _, r := range q.reactions {
+				s.thread.AddReaction(q.msgTS, r)
+			}
 
 			// Update message text
 			text := s.renderQuestion(q, emoji, thinkingEmoji, ownerMention)
@@ -1506,8 +1509,11 @@ func (s *Session) pollQuestion(q *askQuestion, emoji, thinkingEmoji, ownerMentio
 		if hasSelection {
 			q.answered = true
 		}
-		// Re-add submit reaction
-		s.thread.AddReaction(q.msgTS, "white_check_mark")
+		// Re-add all reactions in order
+		s.thread.RemoveAllReactions(q.msgTS, q.reactions)
+		for _, r := range q.reactions {
+			s.thread.AddReaction(q.msgTS, r)
+		}
 	}
 
 	return false
