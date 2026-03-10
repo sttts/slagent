@@ -631,13 +631,22 @@ func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 					s.thread.PostPrompt(p.text, p.reactions)
 					lastToolID = "" // don't track in activity
 				} else if evt.ToolName == "AskUserQuestion" {
-					// Free-text question: prepend @mention, replace ? with ❓ on finish
-					var prefix string
-					if ownerID := s.thread.OwnerID(); ownerID != "" {
-						prefix = fmt.Sprintf("<@%s>: ", ownerID)
+					if hasQuestionsFormat(evt.ToolInput) {
+						// New questions format — handled by handleAskUserQuestion via MCP.
+						// Finalize activity so the thinking/tool lines disappear before
+						// the question messages are posted.
+						finishTool()
+						turn.DeleteActivity()
+						lastToolID = ""
+					} else {
+						// Free-text question: prepend @mention, replace ? with ❓ on finish
+						var prefix string
+						if ownerID := s.thread.OwnerID(); ownerID != "" {
+							prefix = fmt.Sprintf("<@%s>: ", ownerID)
+						}
+						turn.MarkQuestion(prefix)
+						lastToolID = "" // don't track in activity
 					}
-					turn.MarkQuestion(prefix)
-					lastToolID = "" // don't track in activity
 				} else {
 					turn.Tool(lastToolID, evt.ToolName, slagent.ToolRunning, lastToolDetail)
 				}
@@ -1530,6 +1539,20 @@ func formatToolStart(toolName string) string {
 	default:
 		return "🔧 " + toolName
 	}
+}
+
+// hasQuestionsFormat returns true if the AskUserQuestion input uses the new questions array format.
+func hasQuestionsFormat(rawInput string) bool {
+	var input map[string]interface{}
+	if err := json.Unmarshal([]byte(rawInput), &input); err != nil {
+		return false
+	}
+	if raw, ok := input["questions"]; ok {
+		if arr, ok := raw.([]interface{}); ok && len(arr) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // promptMsg holds a Slack message with reaction emojis for interactive response.

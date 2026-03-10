@@ -191,6 +191,10 @@ func (n *nativeTurn) writeTool(id, name, status, detail string) {
 	})
 }
 
+func (n *nativeTurn) deleteActivity() {
+	// Native streaming doesn't have a separate activity message to delete.
+}
+
 func (n *nativeTurn) markQuestion(prefix string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()

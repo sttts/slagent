@@ -197,8 +197,15 @@ func (c *compatTurn) forceFlushText() {
 }
 
 // deleteActivity deletes the activity message and resets activity state.
-// Must be called with lock held.
+// Acquires the lock.
 func (c *compatTurn) deleteActivity() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.deleteActivityLocked()
+}
+
+// deleteActivityLocked deletes the activity message. Must be called with lock held.
+func (c *compatTurn) deleteActivityLocked() {
 	c.stopActivityTimer()
 	if c.activityTS == "" {
 		return
@@ -297,7 +304,7 @@ func (c *compatTurn) writeText(text string) {
 		}
 
 		// Delete activity and post text immediately (same lock scope, minimal gap)
-		c.deleteActivity()
+		c.deleteActivityLocked()
 	}
 	c.textBuf.WriteString(text)
 
@@ -371,7 +378,7 @@ func (c *compatTurn) finish() error {
 	// If no text and no real activity, delete the activity message (e.g. early thinking indicator)
 	finalText := strings.TrimLeft(c.textBuf.String(), "\n")
 	if finalText == "" && len(c.activities) == 0 && strings.TrimSpace(c.thinkBuf.String()) == "" {
-		c.deleteActivity()
+		c.deleteActivityLocked()
 		return nil
 	}
 
