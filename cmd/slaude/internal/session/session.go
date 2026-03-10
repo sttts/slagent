@@ -1576,7 +1576,7 @@ func interactivePrompt(toolName, rawInput, ownerID, emoji string) *promptMsg {
 			if arr, ok := raw.([]interface{}); ok && len(arr) > 0 {
 				var lines []string
 				var reactions []string
-				lines = append(lines, fmt.Sprintf("%s%s\n", prefix, mention))
+				lines = append(lines, fmt.Sprintf("%s%s", prefix, mention))
 				optIdx := 0
 				for _, qRaw := range arr {
 					qMap, ok := qRaw.(map[string]interface{})
@@ -1588,7 +1588,9 @@ func interactivePrompt(toolName, rawInput, ownerID, emoji string) *promptMsg {
 					if len(opts) == 0 {
 						continue
 					}
-					lines = append(lines, fmt.Sprintf("*%s*", qText))
+
+					// Quote the question and options with > for visual framing
+					lines = append(lines, fmt.Sprintf("> *%s*", qText))
 					for _, optRaw := range opts {
 						if optIdx >= len(numberReactions) {
 							break
@@ -1600,9 +1602,9 @@ func interactivePrompt(toolName, rawInput, ownerID, emoji string) *promptMsg {
 						label, _ := opt["label"].(string)
 						desc, _ := opt["description"].(string)
 						if desc != "" {
-							lines = append(lines, fmt.Sprintf("%s  %s — %s", numberEmoji(optIdx), label, desc))
+							lines = append(lines, fmt.Sprintf("> %s  *%s* — %s", numberEmoji(optIdx), label, desc))
 						} else {
-							lines = append(lines, fmt.Sprintf("%s  %s", numberEmoji(optIdx), label))
+							lines = append(lines, fmt.Sprintf("> %s  *%s*", numberEmoji(optIdx), label))
 						}
 						reactions = append(reactions, numberReactions[optIdx])
 						optIdx++
