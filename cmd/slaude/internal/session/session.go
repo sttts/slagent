@@ -1177,6 +1177,14 @@ func (s *Session) handlePermission(req *perms.PermissionRequest) *perms.Permissi
 
 	detail := toolDetail(req.ToolName, string(req.Input))
 
+	// Auto-approve safe interactive tools that don't need classification
+	switch req.ToolName {
+	case "AskUserQuestion",
+		"TodoWrite", "TaskCreate", "TaskUpdate", "TaskGet", "TaskList":
+		s.ui.ToolActivity(fmt.Sprintf("  ✅ %s: %s", req.ToolName, detail))
+		return &perms.PermissionResponse{Behavior: "allow"}
+	}
+
 	// Classify the permission request via AI
 	s.ui.ToolActivity(fmt.Sprintf("  🔐 %s: %s — classifying...", req.ToolName, detail))
 	cls, clsErr := classifyPermission(s.ctx, req.ToolName, req.Input)
