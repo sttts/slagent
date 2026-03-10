@@ -348,22 +348,54 @@ Bot messages (`msg.BotID != ""`) are also skipped.
 Interactive tools (ExitPlanMode, AskUserQuestion, EnterPlanMode) are posted
 to Slack with reaction emojis that the session owner clicks to respond.
 
-### Multi-choice (AskUserQuestion with allowedPrompts)
+### Multi-question (AskUserQuestion with `questions` array)
 
-Posted as a numbered list with emoji reactions (`:one:`, `:two:`, etc.).
-Owner clicks a reaction to select. `FinalizeReaction` cleans up: re-adds
-the selected reaction and removes the rest.
+Each question is posted as a separate Slack message with numbered reactions.
+The message header shows `emoji + thinkingEmoji + @mention` while pending.
+
+**Single-select** (multiSelect: false): Reactions are `:one:` through `:N:` plus `:x:` cancel.
+Owner clicks a number → selected option marked with 👉 in the message text.
+Reaction is re-added so the owner can switch. Question is resolved on first click
+but switchable until all questions are done.
+
+**Multi-select** (multiSelect: true): Same number reactions plus `:white_check_mark:` submit
+and `:x:` cancel. Clicking numbers toggles 👉 markers. `:white_check_mark:` submits
+the selection (requires ≥1 selected).
+
+**Lifecycle:**
+1. All reactions pre-added by the bot
+2. Owner clicks (removes) a reaction → detected, re-added immediately
+3. Message text updated to reflect current selection (👉 markers)
+4. When ALL questions are answered/submitted → thinking emoji removed from all messages,
+   all reactions removed, answers sent to Claude via `updatedInput`
+5. `:x:` on any question cancels the entire set
+
+Answers are sent back via `PermissionResponse.UpdatedInput` with an `answers` map
+keyed by question text → selected option label(s).
 
 ### Binary prompts (ExitPlanMode, EnterPlanMode)
 
 Posted with `:white_check_mark:` and `:x:` reactions. Owner clicks to
 approve or reject.
 
-### Free-text questions (AskUserQuestion without allowedPrompts)
+### Legacy multi-choice (AskUserQuestion with allowedPrompts)
+
+Posted as a numbered list with emoji reactions (`:one:`, `:two:`, etc.).
+Owner clicks a reaction to select.
+
+### Free-text questions (AskUserQuestion without options)
 
 Not posted as a separate prompt. The question text is streamed as the
 turn's text message with `MarkQuestion(prefix)` adding `@mention` and
 trailing `❓`.
+
+## Permission Auto-Approve
+
+Permission requests are classified by `claude -p --model haiku` for sandbox
+risk (green/yellow/red) and network access (host, path, HTTP method).
+Safe operations can be auto-approved based on `--dangerous-auto-approve` and
+`--dangerous-auto-approve-network` flags. Known-safe network destinations
+are configured in `~/.config/slagent/known-hosts.yaml`.
 
 ## Multi-Instance Threads
 
