@@ -247,12 +247,9 @@ func runSession(cfg session.Config) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	resume, err := session.Run(ctx, cfg)
-	if err != nil {
-		return err
-	}
+	resume, runErr := session.Run(ctx, cfg)
 
-	// Print resume commands
+	// Always print resume commands, even on error
 	if resume != nil && resume.SessionID != "" {
 		// Build flags to carry over (only non-default values)
 		var flags string
@@ -287,7 +284,7 @@ func runSession(cfg session.Config) error {
 		fmt.Printf("  claude --resume %s\n", resume.SessionID)
 	}
 
-	return nil
+	return runErr
 }
 
 // AuthCmd sets up Slack credentials.
