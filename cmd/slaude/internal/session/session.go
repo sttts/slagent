@@ -1166,9 +1166,14 @@ func (s *Session) handlePermission(req *perms.PermissionRequest) *perms.Permissi
 	if detail != "" {
 		prompt += ": " + detail
 	}
-	// Show criticality and reasoning
+
+	// Show network destination prominently, then criticality and reasoning
 	if cls.Network {
-		prompt += fmt.Sprintf("\n> %s risk, network: %s — %s", strings.ToUpper(cls.Level), cls.NetworkDst, cls.Reasoning)
+		dest := cls.NetworkDst + cls.NetworkPath
+		if cls.Method != "" {
+			dest = cls.Method + " " + dest
+		}
+		prompt += fmt.Sprintf("\n> %s risk → `%s` — %s", strings.ToUpper(cls.Level), dest, cls.Reasoning)
 	} else {
 		prompt += fmt.Sprintf("\n> %s risk — %s", strings.ToUpper(cls.Level), cls.Reasoning)
 	}
