@@ -619,7 +619,7 @@ func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 			s.ui.ToolActivity(formatTool(evt.ToolName, evt.ToolInput))
 
 			if turn != nil {
-				if p := interactivePrompt(evt.ToolName, evt.ToolInput, s.thread.OwnerID()); p != nil {
+				if p := interactivePrompt(evt.ToolName, evt.ToolInput, s.thread.OwnerID(), s.thread.Emoji()); p != nil {
 					// Post interactive tools with reaction emojis for response
 					s.thread.PostPrompt(p.text, p.reactions)
 					lastToolID = "" // don't track in activity
@@ -1535,7 +1535,7 @@ var numberReactions = []string{"one", "two", "three", "four", "five", "six", "se
 
 // interactivePrompt returns a formatted Slack prompt with reactions for interactive tools,
 // or nil if the tool is not interactive.
-func interactivePrompt(toolName, rawInput, ownerID string) *promptMsg {
+func interactivePrompt(toolName, rawInput, ownerID, emoji string) *promptMsg {
 	var input map[string]interface{}
 	json.Unmarshal([]byte(rawInput), &input)
 
@@ -1553,15 +1553,21 @@ func interactivePrompt(toolName, rawInput, ownerID string) *promptMsg {
 		mention = fmt.Sprintf(" <@%s>", ownerID)
 	}
 
+	// Prefix for messages from this instance
+	prefix := emoji
+	if prefix == "" {
+		prefix = "❓"
+	}
+
 	switch toolName {
 	case "ExitPlanMode":
 		return &promptMsg{
-			text:      fmt.Sprintf("🗳️ *Claude wants to exit plan mode.*%s", mention),
+			text:      fmt.Sprintf("%s 🗳️ *Claude wants to exit plan mode.*%s", prefix, mention),
 			reactions: []string{"white_check_mark", "x"},
 		}
 	case "EnterPlanMode":
 		return &promptMsg{
-			text:      fmt.Sprintf("🗳️ *Claude wants to enter plan mode.*%s", mention),
+			text:      fmt.Sprintf("%s 🗳️ *Claude wants to enter plan mode.*%s", prefix, mention),
 			reactions: []string{"white_check_mark", "x"},
 		}
 	case "AskUserQuestion":
@@ -1570,7 +1576,7 @@ func interactivePrompt(toolName, rawInput, ownerID string) *promptMsg {
 			if arr, ok := raw.([]interface{}); ok && len(arr) > 0 {
 				var lines []string
 				var reactions []string
-				lines = append(lines, fmt.Sprintf("❓ *Claude asks:*%s\n", mention))
+				lines = append(lines, fmt.Sprintf("%s%s\n", prefix, mention))
 				optIdx := 0
 				for _, qRaw := range arr {
 					qMap, ok := qRaw.(map[string]interface{})
@@ -1618,7 +1624,7 @@ func interactivePrompt(toolName, rawInput, ownerID string) *promptMsg {
 			if arr, ok := raw.([]interface{}); ok && len(arr) > 0 {
 				var lines []string
 				var reactions []string
-				lines = append(lines, fmt.Sprintf("❓ *Claude asks:*%s\n%s\n", mention, q))
+				lines = append(lines, fmt.Sprintf("%s%s\n%s\n", prefix, mention, q))
 				for i, opt := range arr {
 					if i >= len(numberReactions) {
 						break

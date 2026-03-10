@@ -14,7 +14,7 @@ func TestInteractivePromptFreeTextReturnsNil(t *testing.T) {
 		"question": "What do you mean by Sandbox?",
 	})
 
-	result := interactivePrompt("AskUserQuestion", string(input), "U123")
+	result := interactivePrompt("AskUserQuestion", string(input), "U123", "🐂")
 	if result != nil {
 		t.Errorf("free-text AskUserQuestion should return nil, got: %+v", result)
 	}
@@ -25,7 +25,7 @@ func TestInteractivePromptFreeTextNoOwnerReturnsNil(t *testing.T) {
 		"question": "What do you mean?",
 	})
 
-	result := interactivePrompt("AskUserQuestion", string(input), "")
+	result := interactivePrompt("AskUserQuestion", string(input), "", "")
 	if result != nil {
 		t.Errorf("free-text AskUserQuestion without owner should return nil, got: %+v", result)
 	}
@@ -38,7 +38,7 @@ func TestInteractivePromptMultiChoiceReturnsPrompt(t *testing.T) {
 		"allowedPrompts": []string{"Option A", "Option B", "Option C"},
 	})
 
-	result := interactivePrompt("AskUserQuestion", string(input), "U123")
+	result := interactivePrompt("AskUserQuestion", string(input), "U123", "🐂")
 	if result == nil {
 		t.Fatal("multi-choice AskUserQuestion should return a prompt")
 	}
@@ -59,9 +59,12 @@ func TestInteractivePromptMultiChoiceReturnsPrompt(t *testing.T) {
 		t.Errorf("prompt should contain options, got: %q", result.text)
 	}
 
-	// Must contain @mention
+	// Must contain @mention and emoji
 	if !strings.Contains(result.text, "<@U123>") {
 		t.Errorf("prompt should contain mention, got: %q", result.text)
+	}
+	if !strings.Contains(result.text, "🐂") {
+		t.Errorf("prompt should contain emoji, got: %q", result.text)
 	}
 }
 
@@ -89,7 +92,7 @@ func TestInteractivePromptQuestionsFormat(t *testing.T) {
 		},
 	})
 
-	result := interactivePrompt("AskUserQuestion", string(input), "U123")
+	result := interactivePrompt("AskUserQuestion", string(input), "U123", "🐂")
 	if result == nil {
 		t.Fatal("questions format should return a prompt")
 	}
@@ -118,7 +121,7 @@ func TestInteractivePromptQuestionsFormat(t *testing.T) {
 }
 
 func TestInteractivePromptExitPlanMode(t *testing.T) {
-	result := interactivePrompt("ExitPlanMode", "{}", "U123")
+	result := interactivePrompt("ExitPlanMode", "{}", "U123", "🐂")
 	if result == nil {
 		t.Fatal("ExitPlanMode should return a prompt")
 	}
@@ -134,7 +137,7 @@ func TestInteractivePromptExitPlanMode(t *testing.T) {
 }
 
 func TestInteractivePromptEnterPlanMode(t *testing.T) {
-	result := interactivePrompt("EnterPlanMode", "{}", "U123")
+	result := interactivePrompt("EnterPlanMode", "{}", "U123", "🐂")
 	if result == nil {
 		t.Fatal("EnterPlanMode should return a prompt")
 	}
@@ -144,7 +147,7 @@ func TestInteractivePromptEnterPlanMode(t *testing.T) {
 }
 
 func TestInteractivePromptUnknownToolReturnsNil(t *testing.T) {
-	result := interactivePrompt("Read", `{"file_path":"main.go"}`, "U123")
+	result := interactivePrompt("Read", `{"file_path":"main.go"}`, "U123", "🐂")
 	if result != nil {
 		t.Errorf("unknown tool should return nil, got: %+v", result)
 	}
