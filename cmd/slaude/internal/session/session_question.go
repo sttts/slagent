@@ -147,7 +147,7 @@ func (s *Session) handleAskUserQuestion(req *perms.PermissionRequest) *perms.Per
 		}
 
 		cancelled := false
-		changed := false
+		var changedQuestions []*askQuestion
 		for _, q := range questions {
 			if q.answered {
 				continue
@@ -155,10 +155,8 @@ func (s *Session) handleAskUserQuestion(req *perms.PermissionRequest) *perms.Per
 			switch s.pollQuestion(q) {
 			case pollCancelled:
 				cancelled = true
-			case pollAnswered:
-				changed = true
-			case pollChanged:
-				changed = true
+			case pollAnswered, pollChanged:
+				changedQuestions = append(changedQuestions, q)
 			}
 			if cancelled {
 				break
@@ -173,7 +171,7 @@ func (s *Session) handleAskUserQuestion(req *perms.PermissionRequest) *perms.Per
 			return &perms.PermissionResponse{Behavior: "deny", Message: "cancelled by user"}
 		}
 
-		if !changed {
+		if len(changedQuestions) == 0 {
 			continue
 		}
 
@@ -194,8 +192,8 @@ func (s *Session) handleAskUserQuestion(req *perms.PermissionRequest) *perms.Per
 			break
 		}
 
-		// Not all done — update each question's display
-		for _, q := range questions {
+		// Update only the questions that changed
+		for _, q := range changedQuestions {
 			if q.answered {
 				// Answered: remove ✅/❌, keep only number reactions in order
 				s.thread.RemoveAllReactions(q.msgTS, q.reactions)
@@ -205,7 +203,7 @@ func (s *Session) handleAskUserQuestion(req *perms.PermissionRequest) *perms.Per
 				text := s.renderQuestionFinal(q, emoji, ownerMention, false)
 				s.thread.UpdateMessage(q.msgTS, text)
 			} else {
-				// Not answered: rebuild all reactions in order, update text
+				// Not answered: rebuild reactions in order, update text
 				s.thread.RemoveAllReactions(q.msgTS, q.reactions)
 				for _, r := range q.reactions {
 					s.thread.AddReaction(q.msgTS, r)

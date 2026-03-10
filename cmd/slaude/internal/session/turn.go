@@ -178,6 +178,10 @@ func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 					if hasQuestionsFormat(evt.ToolInput) {
 						tt.Finish()
 						turn.DeleteActivity()
+
+						// Start a new turn so the response appears below the questions
+						turn = s.thread.NewTurn()
+						tt.turn = turn
 					} else {
 						var prefix string
 						if ownerID := s.thread.OwnerID(); ownerID != "" {
