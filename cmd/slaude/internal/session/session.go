@@ -175,7 +175,14 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 		}
 
 		// Load workspace config for thinking emoji etc.
-		wsCfg := loadWorkspaceConfig(cfg.Workspace)
+		// Resolve workspace name (empty = default from credentials)
+		wsName := cfg.Workspace
+		if wsName == "" {
+			if _, defaultName, _ := credential.ListWorkspaces(); defaultName != "" {
+				wsName = defaultName
+			}
+		}
+		wsCfg := loadWorkspaceConfig(wsName)
 		if wsCfg.ThinkingEmoji != "" {
 			opts = append(opts, slagent.WithThinkingEmoji(wsCfg.ThinkingEmoji))
 		}
