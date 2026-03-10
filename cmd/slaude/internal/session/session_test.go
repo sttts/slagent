@@ -618,6 +618,182 @@ workspaces:
 	}
 }
 
+func TestRenderQuestionSingleSelect(t *testing.T) {
+	q := &askQuestion{
+		text: "What kind of opponent?",
+		options: []askOption{
+			{Label: "Human vs AI", Description: "Play against computer"},
+			{Label: "Human vs Human", Description: "Two players"},
+			{Label: "Both modes", Description: "Let player choose"},
+		},
+		selected:  make(map[int]bool),
+		answerIdx: -1,
+	}
+	s := &Session{}
+
+	// No selection — should have thinking emoji, no 👉
+	text := s.renderQuestion(q, "🐂", ":claude:", " <@U123>")
+	if !strings.Contains(text, "🐂:claude: <@U123>") {
+		t.Errorf("should have emoji+thinking+mention, got: %q", text)
+	}
+	if strings.Contains(text, "👉") {
+		t.Errorf("should not have 👉 yet, got: %q", text)
+	}
+
+	// Select option 1 — should show 👉 on Human vs Human
+	q.answerIdx = 1
+	q.answered = true
+	text = s.renderQuestion(q, "🐂", ":claude:", " <@U123>")
+	for _, line := range strings.Split(text, "\n") {
+		if strings.Contains(line, "Human vs Human") && !strings.Contains(line, "👉") {
+			t.Errorf("selected option should have 👉, got: %q", line)
+		}
+		if strings.Contains(line, "Human vs AI") && strings.Contains(line, "👉") {
+			t.Errorf("unselected option should not have 👉, got: %q", line)
+		}
+	}
+}
+
+func TestRenderQuestionMultiSelect(t *testing.T) {
+	q := &askQuestion{
+		text: "Which features?",
+		options: []askOption{
+			{Label: "Auth"}, {Label: "Logging"}, {Label: "Cache"},
+		},
+		multiSelect: true,
+		selected:    map[int]bool{0: true, 2: true},
+		answerIdx:   -1,
+	}
+	s := &Session{}
+
+	text := s.renderQuestion(q, "🐂", ":claude:", " <@U123>")
+	for _, line := range strings.Split(text, "\n") {
+		if strings.Contains(line, "*Auth*") && !strings.Contains(line, "👉") {
+			t.Errorf("Auth should have 👉, got: %q", line)
+		}
+		if strings.Contains(line, "*Logging*") && strings.Contains(line, "👉") {
+			t.Errorf("Logging should not have 👉, got: %q", line)
+		}
+		if strings.Contains(line, "*Cache*") && !strings.Contains(line, "👉") {
+			t.Errorf("Cache should have 👉, got: %q", line)
+		}
+	}
+}
+
+func TestRenderQuestionFinalRemovesThinkingEmoji(t *testing.T) {
+	q := &askQuestion{
+		text:      "Pick one",
+		options:   []askOption{{Label: "A"}, {Label: "B"}},
+		selected:  make(map[int]bool),
+		answerIdx: 0,
+	}
+	s := &Session{}
+
+	pending := s.renderQuestion(q, "🐂", ":claude:", " <@U123>")
+	if !strings.Contains(pending, ":claude:") {
+		t.Errorf("pending should have thinking emoji, got: %q", pending)
+	}
+
+	final := s.renderQuestionFinal(q, "🐂", " <@U123>", false)
+	if strings.Contains(final, ":claude:") {
+		t.Errorf("final should not have thinking emoji, got: %q", final)
+	}
+	if !strings.HasPrefix(final, "🐂 <@U123>") {
+		t.Errorf("final should start with emoji+mention, got: %q", final)
+	}
+}
+
+func TestRenderQuestionFinalCancelled(t *testing.T) {
+	q := &askQuestion{
+		text:      "Pick one",
+		options:   []askOption{{Label: "A"}},
+		selected:  make(map[int]bool),
+		answerIdx: -1,
+	}
+	s := &Session{}
+
+	text := s.renderQuestionFinal(q, "🐂", " <@U123>", true)
+	if !strings.Contains(text, "❌") {
+		t.Errorf("cancelled should have ❌, got: %q", text)
+	}
+	if strings.Contains(text, ":claude:") {
+		t.Errorf("cancelled should not have thinking emoji, got: %q", text)
+	}
+}
+
+func TestSingleSelectSwitchRendering(t *testing.T) {
+	q := &askQuestion{
+		text:      "Pick",
+		options:   []askOption{{Label: "A"}, {Label: "B"}, {Label: "C"}},
+		selected:  make(map[int]bool),
+		answerIdx: -1,
+	}
+	s := &Session{}
+
+	// Select A — 👉 on A only
+	q.answerIdx = 0
+	q.answered = true
+	text := s.renderQuestion(q, "🐂", ":claude:", "")
+	if strings.Count(text, "👉") != 1 {
+		t.Errorf("should have exactly 1 marker, got: %q", text)
+	}
+
+	// Switch to C — 👉 moves from A to C
+	q.answerIdx = 2
+	text = s.renderQuestion(q, "🐂", ":claude:", "")
+	if strings.Count(text, "👉") != 1 {
+		t.Errorf("should have exactly 1 marker after switch, got: %q", text)
+	}
+	for _, line := range strings.Split(text, "\n") {
+		if strings.Contains(line, "*A*") && strings.Contains(line, "👉") {
+			t.Errorf("A should not have 👉 after switch, got: %q", line)
+		}
+		if strings.Contains(line, "*C*") && !strings.Contains(line, "👉") {
+			t.Errorf("C should have 👉 after switch, got: %q", line)
+		}
+	}
+}
+
+func TestMultiSelectToggleRendering(t *testing.T) {
+	q := &askQuestion{
+		text:        "Pick",
+		options:     []askOption{{Label: "A"}, {Label: "B"}, {Label: "C"}},
+		multiSelect: true,
+		selected:    make(map[int]bool),
+		answerIdx:   -1,
+	}
+	s := &Session{}
+
+	// No selection — no 👉
+	text := s.renderQuestion(q, "🐂", ":claude:", "")
+	if strings.Count(text, "👉") != 0 {
+		t.Errorf("no selection should have 0 markers, got: %q", text)
+	}
+
+	// Select A and C — 2 markers
+	q.selected[0] = true
+	q.selected[2] = true
+	text = s.renderQuestion(q, "🐂", ":claude:", "")
+	if strings.Count(text, "👉") != 2 {
+		t.Errorf("two selections should have 2 markers, got: %q", text)
+	}
+
+	// Toggle A off — back to 1 marker on C
+	q.selected[0] = false
+	text = s.renderQuestion(q, "🐂", ":claude:", "")
+	if strings.Count(text, "👉") != 1 {
+		t.Errorf("one selection should have 1 marker, got: %q", text)
+	}
+	for _, line := range strings.Split(text, "\n") {
+		if strings.Contains(line, "*C*") && !strings.Contains(line, "👉") {
+			t.Errorf("C should still have 👉, got: %q", line)
+		}
+		if strings.Contains(line, "*A*") && strings.Contains(line, "👉") {
+			t.Errorf("A should not have 👉 after toggle off, got: %q", line)
+		}
+	}
+}
+
 func TestLevelEmoji(t *testing.T) {
 	if e := levelEmoji("green"); e != "🟢" {
 		t.Errorf("green = %q", e)
