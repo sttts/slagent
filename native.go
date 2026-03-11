@@ -202,6 +202,10 @@ func (n *nativeTurn) markQuestion(prefix string) {
 	n.qPrefix = prefix
 }
 
+func (n *nativeTurn) setPlainText(on bool) {
+	// Native streaming doesn't need plain text mode.
+}
+
 func (n *nativeTurn) writeStatus(text string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()

@@ -24,6 +24,7 @@ func (m *mockTurn) Text(string)           {}
 func (m *mockTurn) Status(string)         {}
 func (m *mockTurn) MarkQuestion(string)   {}
 func (m *mockTurn) DeleteActivity()       {}
+func (m *mockTurn) SetPlainText(bool)     {}
 func (m *mockTurn) Finish() error         { return nil }
 
 func TestToolTrackerStartFinish(t *testing.T) {

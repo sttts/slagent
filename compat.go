@@ -46,6 +46,7 @@ type compatTurn struct {
 	textTimer  *time.Timer // debounce timer for text flush
 	question   bool        // replace trailing ? with ❓ on finish
 	qPrefix    string      // prepended to text on finish (e.g. "@user: ")
+	plainText  bool        // wrap text in code block instead of mrkdwn conversion
 
 	mu sync.Mutex
 }
@@ -75,11 +76,13 @@ func (c *compatTurn) logSlack(action, content string) {
 // textMsgOpts returns message options for a text message with emoji prefix.
 // Converts markdown to Slack mrkdwn format. Uses a section block with the given block_id.
 // The block_id should include the appropriate suffix (~, ~act, or none).
-func textMsgOpts(display, blockID, emoji string, quote bool) []slackapi.MsgOption {
-	body := MarkdownToMrkdwn(display)
-
+func textMsgOpts(display, blockID, emoji string, quote, plainText bool) []slackapi.MsgOption {
 	var converted string
-	if quote {
+	if plainText {
+		// Plan mode: wrap in code block, no mrkdwn conversion
+		converted = emoji + " 📋\n```\n" + display + "\n```"
+	} else if quote {
+		body := MarkdownToMrkdwn(display)
 		// Blockquote every line so bot messages stand out among human messages
 		lines := strings.Split(body, "\n")
 		lines[0] = "> " + emoji + " " + lines[0]
@@ -88,7 +91,7 @@ func textMsgOpts(display, blockID, emoji string, quote bool) []slackapi.MsgOptio
 		}
 		converted = strings.Join(lines, "\n")
 	} else {
-		converted = emoji + " " + body
+		converted = emoji + " " + MarkdownToMrkdwn(display)
 	}
 	section := slackapi.NewSectionBlock(
 		slackapi.NewTextBlockObject("mrkdwn", converted, false, false),
@@ -295,6 +298,12 @@ func (c *compatTurn) markQuestion(prefix string) {
 	c.qPrefix = prefix
 }
 
+func (c *compatTurn) setPlainText(on bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.plainText = on
+}
+
 func (c *compatTurn) writeStatus(text string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -342,7 +351,7 @@ func (c *compatTurn) postText() {
 
 	// While streaming, use ~ suffix so pollers know this message isn't final
 	streamBlockID := c.blockID + "~"
-	opts := textMsgOpts(full, streamBlockID, c.emoji, c.quoteMessages)
+	opts := textMsgOpts(full, streamBlockID, c.emoji, c.quoteMessages, c.plainText)
 
 	converted := c.emoji + " " + MarkdownToMrkdwn(full)
 	if c.textTS == "" {
@@ -432,7 +441,7 @@ func (c *compatTurn) finish() error {
 	}
 
 	// Update existing text message with full content — use final block_id (no suffix)
-	opts := textMsgOpts(finalText, c.blockID, c.emoji, c.quoteMessages)
+	opts := textMsgOpts(finalText, c.blockID, c.emoji, c.quoteMessages, c.plainText)
 	finalConverted := c.emoji + " " + MarkdownToMrkdwn(finalText)
 
 	// If activity is below the text message, delete old text and repost below activity

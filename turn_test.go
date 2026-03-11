@@ -25,6 +25,7 @@ func (f *fakeTurnWriter) writeTool(id, name, status, detail string)    { f.tools
 func (f *fakeTurnWriter) writeStatus(text string)                      { f.statuses = append(f.statuses, text) }
 func (f *fakeTurnWriter) markQuestion(prefix string)                    { f.question = true; f.qPrefix = prefix }
 func (f *fakeTurnWriter) deleteActivity()                              {}
+func (f *fakeTurnWriter) setPlainText(on bool)                         {}
 func (f *fakeTurnWriter) finish() error                                { f.finished = true; return nil }
 
 func TestTurnImplDelegation(t *testing.T) {

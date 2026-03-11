@@ -21,6 +21,10 @@ type Turn interface {
 	// DeleteActivity deletes the activity message (thinking + tools).
 	DeleteActivity()
 
+	// SetPlainText toggles plain text mode. When on, text is posted as a code
+	// block instead of being converted to Slack mrkdwn (e.g. for plan output).
+	SetPlainText(on bool)
+
 	// Finish finalizes the turn. Must be called exactly once.
 	Finish() error
 }
@@ -33,6 +37,7 @@ type turnWriter interface {
 	writeStatus(text string)
 	markQuestion(prefix string)
 	deleteActivity()
+	setPlainText(on bool)
 	finish() error
 }
 
@@ -47,4 +52,5 @@ func (t *turnImpl) Text(text string)                        { t.w.writeText(text
 func (t *turnImpl) Status(text string)                      { t.w.writeStatus(text) }
 func (t *turnImpl) MarkQuestion(prefix string)               { t.w.markQuestion(prefix) }
 func (t *turnImpl) DeleteActivity()                          { t.w.deleteActivity() }
+func (t *turnImpl) SetPlainText(on bool)                     { t.w.setPlainText(on) }
 func (t *turnImpl) Finish() error                           { return t.w.finish() }
