@@ -92,6 +92,7 @@ func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 	}
 	go readNext()
 
+	var interrupted bool
 	for {
 		var evt *claude.Event
 		var err error
@@ -101,6 +102,7 @@ func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 			evt, err = result.evt, result.err
 		case <-s.stopNotify:
 			s.proc.Interrupt()
+			interrupted = true
 			s.ui.Info("⏹️ Interrupted")
 			if s.thread != nil {
 				s.thread.Post("⏹️ Interrupted")
@@ -109,18 +111,24 @@ func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 			evt, err = result.evt, result.err
 		}
 
-		if err != nil {
+		if err != nil || evt == nil {
 			if turn != nil {
 				turn.Finish()
 			}
 			s.ui.EndResponse()
-			return err
-		}
-		if evt == nil {
-			if turn != nil {
-				turn.Finish()
+
+			// SIGINT may kill Claude (e.g. during Bash tool execution) instead
+			// of just aborting the turn. Restart with --resume so the session
+			// can continue.
+			if interrupted {
+				if restartErr := s.restartAfterInterrupt(); restartErr != nil {
+					return fmt.Errorf("restart after interrupt: %w", restartErr)
+				}
+				return nil
 			}
-			s.ui.EndResponse()
+			if err != nil {
+				return err
+			}
 			return fmt.Errorf("unexpected EOF from Claude")
 		}
 
@@ -177,6 +185,20 @@ func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 				if p := interactivePrompt(evt.ToolName, evt.ToolInput, s.thread.OwnerID(), s.thread.Emoji()); p != nil {
 					s.thread.PostPrompt(p.text, p.reactions)
 					tt.Clear()
+				} else if evt.ToolName == "EnterPlanMode" || evt.ToolName == "ExitPlanMode" {
+					// Clear activity so the tool doesn't linger in Slack.
+					tt.Clear()
+					turn.DeleteActivity()
+
+					// If MCP permission already handled this (ExitPlanMode), skip.
+					// Otherwise block here for Slack approval (EnterPlanMode bypasses MCP).
+					s.planModeMu.Lock()
+					handled := s.planModeHandled
+					s.planModeHandled = false
+					s.planModeMu.Unlock()
+					if !handled {
+						s.approvePlanModeTransition(evt.ToolName == "EnterPlanMode")
+					}
 				} else if evt.ToolName == "AskUserQuestion" {
 					if hasQuestionsFormat(evt.ToolInput) {
 						tt.Finish()
@@ -198,17 +220,9 @@ func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 				}
 			}
 
-			// Track plan mode transitions
-			if s.thread != nil {
-				switch evt.ToolName {
-				case "EnterPlanMode":
-					s.thread.SetModeSuffix(" — 📋 planning")
-					s.thread.Post(s.thread.Emoji() + " 📋 Entered plan mode")
-				case "ExitPlanMode":
-					s.thread.SetModeSuffix("")
-					s.thread.Post(s.thread.Emoji() + " ⚡ Exited plan mode")
-				}
-			}
+			// NOTE: EnterPlanMode/ExitPlanMode transitions are handled in
+			// handlePlanModePermission (after owner approval), NOT here.
+			// Announcing transitions on tool_use would bypass permission checks.
 
 			if evt.ToolName == "TodoWrite" {
 				s.updateTodos(evt.ToolInput)

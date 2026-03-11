@@ -450,6 +450,8 @@ func (s *Session) handlePermission(req *perms.PermissionRequest) *perms.Permissi
 		return &perms.PermissionResponse{Behavior: "allow"}
 	case "AskUserQuestion":
 		return s.handleAskUserQuestion(req)
+	case "EnterPlanMode", "ExitPlanMode":
+		return s.handlePlanModePermission(req)
 	}
 
 	// Classify via AI
@@ -577,4 +579,138 @@ func (s *Session) handlePermission(req *perms.PermissionRequest) *perms.Permissi
 	s.thread.DeleteMessage(msgTS)
 	s.ui.ToolActivity(fmt.Sprintf("  ⏰ Timed out: %s: %s", req.ToolName, detail))
 	return &perms.PermissionResponse{Behavior: "deny", Message: "permission request timed out"}
+}
+
+// handlePlanModePermission handles Enter/ExitPlanMode permission requests.
+// Posts a prompt to Slack and only transitions mode after owner approval.
+func (s *Session) handlePlanModePermission(req *perms.PermissionRequest) *perms.PermissionResponse {
+	isEnter := req.ToolName == "EnterPlanMode"
+	label := "exit"
+	if isEnter {
+		label = "enter"
+	}
+
+	// Without Slack thread, auto-approve
+	if s.thread == nil {
+		s.ui.ToolActivity(fmt.Sprintf("  ✅ %s plan mode", label))
+		return &perms.PermissionResponse{Behavior: "allow"}
+	}
+
+	emoji := s.thread.Emoji()
+	prompt := fmt.Sprintf("%s 🗳️ *Claude wants to %s plan mode.*", emoji, label)
+	if ownerID := s.thread.OwnerID(); ownerID != "" {
+		prompt += fmt.Sprintf(" <@%s>", ownerID)
+	}
+
+	reactions := []string{"white_check_mark", "x"}
+	msgTS, err := s.thread.PostPrompt(prompt, reactions)
+	if err != nil {
+		return &perms.PermissionResponse{Behavior: "deny", Message: "failed to post prompt"}
+	}
+
+	// Poll for owner reaction
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	deadline := time.Now().Add(permissionTimeout)
+	for time.Now().Before(deadline) {
+		select {
+		case <-s.ctx.Done():
+			s.thread.DeleteMessage(msgTS)
+			return &perms.PermissionResponse{Behavior: "deny", Message: "session cancelled"}
+		case <-ticker.C:
+		}
+		selected, err := s.thread.PollReaction(msgTS, reactions)
+		if err != nil {
+			continue
+		}
+		switch selected {
+		case "white_check_mark":
+			s.thread.DeleteMessage(msgTS)
+			if isEnter {
+				s.thread.SetModeSuffix(" — 📋 planning")
+				s.thread.Post(emoji + " 📋 Entered plan mode")
+			} else {
+				s.thread.SetModeSuffix("")
+				s.thread.Post(emoji + " ⚡ Exited plan mode")
+			}
+			// Mark as handled so the tool_use handler in readTurn skips
+			s.planModeMu.Lock()
+			s.planModeHandled = true
+			s.planModeMu.Unlock()
+			s.ui.ToolActivity(fmt.Sprintf("  ✅ Approved: %s plan mode", label))
+			return &perms.PermissionResponse{Behavior: "allow"}
+		case "x":
+			s.thread.DeleteMessage(msgTS)
+			s.ui.ToolActivity(fmt.Sprintf("  ❌ Denied: %s plan mode", label))
+			return &perms.PermissionResponse{Behavior: "deny", Message: "denied via Slack"}
+		}
+	}
+
+	s.thread.DeleteMessage(msgTS)
+	s.ui.ToolActivity(fmt.Sprintf("  ⏰ Timed out: %s plan mode", label))
+	return &perms.PermissionResponse{Behavior: "deny", Message: "timed out"}
+}
+
+// approvePlanModeTransition handles plan mode tools that bypass the MCP
+// permission system (e.g. EnterPlanMode). Posts a prompt to Slack, waits
+// for the owner's reaction, and transitions mode on approval.
+// Called from readTurn when the MCP handler did NOT already handle the tool.
+func (s *Session) approvePlanModeTransition(isEnter bool) {
+	if s.thread == nil {
+		return
+	}
+
+	emoji := s.thread.Emoji()
+	label := "exit"
+	if isEnter {
+		label = "enter"
+	}
+
+	prompt := fmt.Sprintf("%s 🗳️ *Claude wants to %s plan mode.*", emoji, label)
+	if ownerID := s.thread.OwnerID(); ownerID != "" {
+		prompt += fmt.Sprintf(" <@%s>", ownerID)
+	}
+
+	reactions := []string{"white_check_mark", "x"}
+	msgTS, err := s.thread.PostPrompt(prompt, reactions)
+	if err != nil {
+		return
+	}
+
+	// Poll for owner reaction
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	deadline := time.Now().Add(permissionTimeout)
+	for time.Now().Before(deadline) {
+		select {
+		case <-s.ctx.Done():
+			s.thread.DeleteMessage(msgTS)
+			return
+		case <-ticker.C:
+		}
+		selected, err := s.thread.PollReaction(msgTS, reactions)
+		if err != nil {
+			continue
+		}
+		switch selected {
+		case "white_check_mark":
+			s.thread.DeleteMessage(msgTS)
+			if isEnter {
+				s.thread.SetModeSuffix(" — 📋 planning")
+				s.thread.Post(emoji + " 📋 Entered plan mode")
+			} else {
+				s.thread.SetModeSuffix("")
+				s.thread.Post(emoji + " ⚡ Exited plan mode")
+			}
+			s.ui.ToolActivity(fmt.Sprintf("  ✅ Approved: %s plan mode", label))
+			return
+		case "x":
+			s.thread.DeleteMessage(msgTS)
+			s.ui.ToolActivity(fmt.Sprintf("  ❌ Denied: %s plan mode", label))
+			return
+		}
+	}
+
+	s.thread.DeleteMessage(msgTS)
+	s.ui.ToolActivity(fmt.Sprintf("  ⏰ Timed out: %s plan mode", label))
 }

@@ -75,6 +75,14 @@ type Session struct {
 
 	// Silent turn suppression: stop showing thinking activity after N silent turns
 	silentTurnsLeft int // decremented on silent turns, reset on output
+
+	// Claude subprocess args for restart after interrupt
+	claudeExtraArgs []string
+
+	// Plan mode dedup: set by handlePlanModePermission (MCP path) so the
+	// tool_use handler in readTurn doesn't double-prompt.
+	planModeMu      sync.Mutex
+	planModeHandled bool
 }
 
 // todo is a single item from Claude's TodoWrite tool.
@@ -171,6 +179,7 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 	}
 
 	// Start Claude with pass-through args
+	sess.claudeExtraArgs = extraArgs
 	var claudeOpts []claude.Option
 	claudeOpts = append(claudeOpts, claude.WithExtraArgs(extraArgs))
 
@@ -294,6 +303,29 @@ func (s *Session) initialTurn() error {
 	if err := s.readTurn(); err != nil {
 		return fmt.Errorf("reading initial response: %w", err)
 	}
+	return nil
+}
+
+// restartAfterInterrupt restarts Claude with --resume after SIGINT killed it.
+// This happens when Claude is executing a Bash tool and SIGINT propagates.
+func (s *Session) restartAfterInterrupt() error {
+	sessionID := s.proc.SessionID()
+	if sessionID == "" {
+		return fmt.Errorf("no session ID for restart")
+	}
+
+	args := append([]string{}, s.claudeExtraArgs...)
+	args = append(args, "--resume", sessionID)
+
+	var claudeOpts []claude.Option
+	claudeOpts = append(claudeOpts, claude.WithExtraArgs(args))
+
+	proc, err := claude.Start(s.ctx, claudeOpts...)
+	if err != nil {
+		return err
+	}
+	s.proc = proc
+	s.ui.Info("🔄 Claude restarted after interrupt")
 	return nil
 }
 

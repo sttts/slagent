@@ -92,16 +92,6 @@ func interactivePrompt(toolName, rawInput, ownerID, emoji string) *promptMsg {
 	}
 
 	switch toolName {
-	case "ExitPlanMode":
-		return &promptMsg{
-			text:      fmt.Sprintf("%s 🗳️ *Claude wants to exit plan mode.*%s", prefix, mention),
-			reactions: []string{"white_check_mark", "x"},
-		}
-	case "EnterPlanMode":
-		return &promptMsg{
-			text:      fmt.Sprintf("%s 🗳️ *Claude wants to enter plan mode.*%s", prefix, mention),
-			reactions: []string{"white_check_mark", "x"},
-		}
 	case "AskUserQuestion":
 		// New questions format is handled by handleAskUserQuestion via MCP permission flow.
 

@@ -88,29 +88,19 @@ func TestInteractivePromptQuestionsFormatReturnsNil(t *testing.T) {
 	}
 }
 
-func TestInteractivePromptExitPlanMode(t *testing.T) {
+func TestInteractivePromptExitPlanModeReturnsNil(t *testing.T) {
+	// ExitPlanMode is handled by the permission system, not interactivePrompt
 	result := interactivePrompt("ExitPlanMode", "{}", "U123", "🐂")
-	if result == nil {
-		t.Fatal("ExitPlanMode should return a prompt")
-	}
-	if len(result.reactions) != 2 {
-		t.Errorf("reactions = %d, want 2", len(result.reactions))
-	}
-	if result.reactions[0] != "white_check_mark" || result.reactions[1] != "x" {
-		t.Errorf("reactions = %v, want [white_check_mark x]", result.reactions)
-	}
-	if !strings.Contains(result.text, "<@U123>") {
-		t.Errorf("prompt should contain mention, got: %q", result.text)
+	if result != nil {
+		t.Errorf("ExitPlanMode should return nil (handled by permission system), got: %+v", result)
 	}
 }
 
-func TestInteractivePromptEnterPlanMode(t *testing.T) {
+func TestInteractivePromptEnterPlanModeReturnsNil(t *testing.T) {
+	// EnterPlanMode is handled by the permission system, not interactivePrompt
 	result := interactivePrompt("EnterPlanMode", "{}", "U123", "🐂")
-	if result == nil {
-		t.Fatal("EnterPlanMode should return a prompt")
-	}
-	if len(result.reactions) != 2 {
-		t.Errorf("reactions = %d, want 2", len(result.reactions))
+	if result != nil {
+		t.Errorf("EnterPlanMode should return nil (handled by permission system), got: %+v", result)
 	}
 }
 
