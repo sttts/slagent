@@ -187,14 +187,19 @@ func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 					tt.Clear()
 				} else if evt.ToolName == "EnterPlanMode" {
 					// EnterPlanMode bypasses MCP permission — handle approval here.
+					// Finish current turn so pre-plan text is its own message.
 					tt.Clear()
-					turn.DeleteActivity()
+					turn.Finish()
 					s.approvePlanModeTransition(true)
+					turn = s.thread.NewTurn()
+					tt.turn = turn
 				} else if evt.ToolName == "ExitPlanMode" {
 					// ExitPlanMode goes through MCP permission (handlePlanModePermission).
-					// Just clear activity; the MCP handler posts the prompt.
+					// Finish current turn so plan-mode text doesn't merge with execution output.
 					tt.Clear()
-					turn.DeleteActivity()
+					turn.Finish()
+					turn = s.thread.NewTurn()
+					tt.turn = turn
 				} else if evt.ToolName == "AskUserQuestion" {
 					if hasQuestionsFormat(evt.ToolInput) {
 						tt.Finish()
