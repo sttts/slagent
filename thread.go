@@ -267,6 +267,24 @@ func (t *Thread) NewTurn() Turn {
 }
 
 // Post sends a plain message in the thread.
+// PostEphemeral sends a message visible only to the specified user in the thread.
+func (t *Thread) PostEphemeral(userID, text string) {
+	t.mu.Lock()
+	threadTS := t.threadTS
+	t.mu.Unlock()
+
+	if threadTS == "" {
+		return
+	}
+	t.logSlack("postEphemeral("+userID+")", text)
+	t.client.PostEphemeral(
+		t.channel,
+		userID,
+		slackapi.MsgOptionText(text, false),
+		slackapi.MsgOptionTS(threadTS),
+	)
+}
+
 func (t *Thread) Post(text string) (string, error) {
 	t.mu.Lock()
 	threadTS := t.threadTS
@@ -384,7 +402,7 @@ func (t *Thread) PollReaction(msgTS string, expected []string) (string, error) {
 					Channel:   t.channel,
 					Timestamp: msgTS,
 				})
-				t.Post(fmt.Sprintf("<@%s> Only the session owner can approve permissions.", u))
+				t.PostEphemeral(u, fmt.Sprintf("🚫 Only <@%s> can approve permissions.", t.ownerID))
 			}
 		}
 	}
@@ -1037,6 +1055,39 @@ func mistargeted(text string) string {
 		}
 	}
 	return ""
+}
+
+// isMistargetedToUs returns true if the message starts with our emoji shortcode
+// but without the trailing colon (e.g. ":fox_face: text" instead of ":fox_face:: text").
+func isMistargetedToUs(text, instanceID string) bool {
+	// Strip leading @mentions
+	s := text
+	for strings.HasPrefix(s, "<@") {
+		if idx := strings.Index(s, ">"); idx >= 0 {
+			s = strings.TrimLeft(s[idx+1:], " ")
+		} else {
+			break
+		}
+	}
+
+	// Check for ":instanceID: text" (single colon)
+	prefix := ":" + instanceID + ": "
+	if strings.HasPrefix(s, prefix) {
+		return true
+	}
+
+	// Check for Unicode emoji prefix
+	if emoji, ok := identityEmojis[instanceID]; ok {
+		if strings.HasPrefix(s, emoji) {
+			rest := strings.TrimLeft(s[len(emoji):], " ")
+			// Make sure it's not the proper "::" syntax (already handled as targeted)
+			if !strings.HasPrefix(rest, ":") {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 // helpText returns the help message for the thread.

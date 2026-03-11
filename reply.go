@@ -137,7 +137,7 @@ func (t *Thread) pollOnce() ([]Reply, error) {
 				continue
 			}
 			if msg.User != t.ownerID {
-				t.Post(t.emoji + " 🚫 Only the session owner can quit.")
+				t.PostEphemeral(msg.User, t.emoji+" 🚫 Only the session owner can quit.")
 				t.advanceLastTS(msg.Timestamp)
 				continue
 			}
@@ -147,10 +147,10 @@ func (t *Thread) pollOnce() ([]Reply, error) {
 			continue
 		}
 
-		// Detect near-miss targeting (wrong syntax) and give feedback
+		// Detect near-miss targeting (wrong syntax) and give ephemeral feedback
 		if !targeted {
 			if hint := mistargeted(msg.Text); hint != "" {
-				t.Post(hint)
+				t.PostEphemeral(msg.User, hint)
 				t.advanceLastTS(msg.Timestamp)
 				continue
 			}
@@ -179,7 +179,7 @@ func (t *Thread) pollOnce() ([]Reply, error) {
 					t.refreshTitle()
 				}
 				if !t.isAuthorized(msg.User) {
-					t.Post(t.emoji + " 🚫 Not authorized.")
+					t.PostEphemeral(msg.User, t.emoji+" 🚫 Not authorized.")
 					t.advanceLastTS(msg.Timestamp)
 					continue
 				}
@@ -200,9 +200,11 @@ func (t *Thread) pollOnce() ([]Reply, error) {
 				t.refreshTitle()
 			}
 			if !t.isAuthorized(msg.User) {
-				// Only tell the user when they're addressing us directly
+				// Tell the user via ephemeral when addressing us directly or near-miss
 				if targeted && targetID == t.instanceID {
-					t.Post(t.emoji + " 🚫 Not authorized. Ask the thread owner to `/open`.")
+					t.PostEphemeral(msg.User, t.emoji+" 🚫 Not authorized. Ask the thread owner to `/open`.")
+				} else if !targeted && isMistargetedToUs(msg.Text, t.instanceID) {
+					t.PostEphemeral(msg.User, t.emoji+" 🚫 Not authorized. Ask the thread owner to `/open`.")
 				}
 				t.advanceLastTS(msg.Timestamp)
 				continue

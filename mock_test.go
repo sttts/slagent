@@ -18,11 +18,18 @@ import (
 type mockSlack struct {
 	server *httptest.Server
 
-	mu        sync.Mutex
-	messages  []mockMessage          // posted messages
-	tsSeq     int                    // monotonic timestamp counter
-	streams   map[string]*mockStream // streamID → stream
-	reactions map[string]map[string]map[string]bool // msgTS → reaction → userIDs
+	mu         sync.Mutex
+	messages   []mockMessage          // posted messages
+	ephemeral  []mockEphemeral        // ephemeral messages
+	tsSeq      int                    // monotonic timestamp counter
+	streams    map[string]*mockStream // streamID → stream
+	reactions  map[string]map[string]map[string]bool // msgTS → reaction → userIDs
+}
+
+type mockEphemeral struct {
+	Channel string
+	UserID  string
+	Text    string
 }
 
 type mockMessage struct {
@@ -60,6 +67,7 @@ func newMockSlack() *mockSlack {
 	mux.HandleFunc("/api/chat.getPermalink", m.handleGetPermalink)
 	mux.HandleFunc("/api/auth.test", m.handleAuthTest)
 	mux.HandleFunc("/api/users.info", m.handleUsersInfo)
+	mux.HandleFunc("/api/chat.postEphemeral", m.handlePostEphemeral)
 	mux.HandleFunc("/api/reactions.add", m.handleReactionsAdd)
 	mux.HandleFunc("/api/reactions.remove", m.handleReactionsRemove)
 	mux.HandleFunc("/api/reactions.get", m.handleReactionsGet)
@@ -409,6 +417,27 @@ func (m *mockSlack) updateBlockID(ts, newBlockID string) {
 			return
 		}
 	}
+}
+
+func (m *mockSlack) handlePostEphemeral(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	channel := r.FormValue("channel")
+	user := r.FormValue("user")
+	text := r.FormValue("text")
+
+	m.mu.Lock()
+	m.ephemeral = append(m.ephemeral, mockEphemeral{Channel: channel, UserID: user, Text: text})
+	m.mu.Unlock()
+
+	m.respond(w, map[string]any{"message_ts": m.nextTS()})
+}
+
+func (m *mockSlack) ephemeralMessages() []mockEphemeral {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result := make([]mockEphemeral, len(m.ephemeral))
+	copy(result, m.ephemeral)
+	return result
 }
 
 // Reaction handlers

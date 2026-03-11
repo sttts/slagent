@@ -691,20 +691,20 @@ func TestUnauthorizedTargetedGetsFeedback(t *testing.T) {
 	)
 	thread.Start("Test")
 
-	// Targeted message from unauthorized user — gets feedback
+	// Targeted message from unauthorized user — gets ephemeral feedback
 	mock.injectReply("C_TEST", thread.ThreadTS(), "U_OTHER", ":fox_face:: help me")
 	replies, _ := thread.PollReplies()
 	if len(replies) != 0 {
 		t.Error("unauthorized targeted message should not produce replies")
 	}
 	var found bool
-	for _, m := range mock.activeMessages() {
-		if strings.Contains(m.Text, "Not authorized") && m.ThreadTS == thread.ThreadTS() {
+	for _, m := range mock.ephemeralMessages() {
+		if strings.Contains(m.Text, "Not authorized") && m.UserID == "U_OTHER" {
 			found = true
 		}
 	}
 	if !found {
-		t.Error("targeted message from unauthorized user should trigger feedback")
+		t.Error("targeted message from unauthorized user should trigger ephemeral feedback")
 	}
 }
 
@@ -980,10 +980,9 @@ func TestMistargetedFeedbackPosted(t *testing.T) {
 		t.Errorf("near-miss should not produce replies, got %d", len(replies))
 	}
 
-	// Check feedback was posted
-	msgs := mock.activeMessages()
+	// Check ephemeral feedback was posted
 	var found bool
-	for _, m := range msgs {
+	for _, m := range mock.ephemeralMessages() {
 		if strings.Contains(m.Text, "::") && strings.Contains(m.Text, "fox_face") {
 			found = true
 			break
