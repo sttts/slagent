@@ -740,6 +740,11 @@ func (t *Thread) parseTitle(text string) {
 			break
 		}
 		uid := t.topic[2:end]
+
+		// Strip display name suffix: <@U12345|sttts> → U12345
+		if idx := strings.Index(uid, "|"); idx >= 0 {
+			uid = uid[:idx]
+		}
 		t.allowedUsers[uid] = true
 		t.topic = strings.TrimLeft(t.topic[end+1:], " ")
 	}
@@ -760,7 +765,13 @@ func extractMentions(s string, target map[string]bool) {
 		if end < 0 {
 			break
 		}
-		target[rest[start+2:start+end]] = true
+		uid := rest[start+2 : start+end]
+
+		// Strip display name suffix: <@U12345|sttts> → U12345
+		if idx := strings.Index(uid, "|"); idx >= 0 {
+			uid = uid[:idx]
+		}
+		target[uid] = true
 		rest = rest[start+end+1:]
 	}
 }
@@ -1061,7 +1072,13 @@ func (t *Thread) helpText() string {
 // parseMention extracts a user ID from a Slack mention ("<@U123>").
 func parseMention(s string) string {
 	if strings.HasPrefix(s, "<@") && strings.HasSuffix(s, ">") {
-		return s[2 : len(s)-1]
+		uid := s[2 : len(s)-1]
+
+		// Strip display name suffix: <@U12345|sttts> → U12345
+		if idx := strings.Index(uid, "|"); idx >= 0 {
+			uid = uid[:idx]
+		}
+		return uid
 	}
 	return ""
 }
