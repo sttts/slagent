@@ -113,11 +113,11 @@ func (s *Session) connectSlack() error {
 func (s *Session) buildExtraArgs() []string {
 	args := append([]string{}, s.cfg.ClaudeArgs...)
 
-	// Load SOUL.md via --soul (working directory first, then ~/.config/slagent/)
-	if findArg(args, "--soul") < 0 {
+	// Load SOUL.md — use --soul if supported, otherwise fall back to --system-prompt.
+	if findArg(args, "--soul") < 0 && findArg(args, "--system-prompt") < 0 {
 		for _, path := range soulPaths() {
 			if _, err := os.Stat(path); err == nil {
-				args = append(args, "--soul", path)
+				args = appendSoulArg(args, "claude", path)
 				break
 			}
 		}
