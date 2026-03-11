@@ -29,6 +29,8 @@ var cli struct {
 	Channels  ChannelsCmd `cmd:"" help:"List Slack channels and group DMs."`
 	Share     ShareCmd    `cmd:"" help:"Post a plan file to Slack for review."`
 	Status    StatusCmd   `cmd:"" help:"Show current configuration."`
+	Ps        PsCmd       `cmd:"" help:"List running slaude sessions."`
+	Kill      KillCmd     `cmd:"" help:"Kill a running slaude session by emoji or PID."`
 }
 
 // StartCmd starts a new interactive session with Claude Code.
@@ -473,6 +475,31 @@ func (cmd *StatusCmd) Run() error {
 		}
 		fmt.Printf("  %s✅ %s (%s token: %s...)\n", marker, name, creds.EffectiveType(), token)
 	}
+	return nil
+}
+
+// PsCmd lists running slaude sessions.
+type PsCmd struct{}
+
+func (cmd *PsCmd) Run() error {
+	sessions, err := session.ListSessions()
+	if err != nil {
+		return fmt.Errorf("list sessions: %w", err)
+	}
+	fmt.Print(session.FormatSessions(sessions))
+	return nil
+}
+
+// KillCmd sends SIGINT to a running slaude session identified by emoji or PID.
+type KillCmd struct {
+	Target string `arg:"" help:"Session emoji (e.g. 'fox', ':fox_face:') or PID." name:"target"`
+}
+
+func (cmd *KillCmd) Run() error {
+	if err := session.KillSession(cmd.Target); err != nil {
+		return err
+	}
+	fmt.Printf("✅ Sent SIGINT to session %q\n", cmd.Target)
 	return nil
 }
 
