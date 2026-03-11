@@ -333,6 +333,7 @@ func soulPaths() []string {
 	return paths
 }
 
+
 // truncate shortens s to max characters with "..." suffix.
 func truncate(s string, max int) string {
 	if len(s) > max {
