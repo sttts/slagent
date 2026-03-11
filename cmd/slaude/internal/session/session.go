@@ -76,6 +76,10 @@ type Session struct {
 	// Silent turn suppression: stop showing thinking activity after N silent turns
 	silentTurnsLeft int // decremented on silent turns, reset on output
 
+	// Plan mode approval: approvePlanModeTransition signals result here,
+	// handlePlanModePermission (MCP goroutine) waits for it.
+	planApproval chan bool
+
 	// Claude subprocess args for restart after interrupt
 	claudeExtraArgs []string
 }
@@ -110,9 +114,10 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 		ctx:         ctx,
 		ui:          ui,
 		cancel:      cancel,
-		replyNotify: make(chan struct{}, 1),
-		stopNotify:  make(chan struct{}, 1),
-		knownHosts:      loadKnownHosts(),
+		replyNotify:  make(chan struct{}, 1),
+		stopNotify:   make(chan struct{}, 1),
+		planApproval: make(chan bool),
+		knownHosts:   loadKnownHosts(),
 		silentTurnsLeft: 0,
 	}
 

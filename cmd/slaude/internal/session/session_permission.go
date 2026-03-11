@@ -451,7 +451,18 @@ func (s *Session) handlePermission(req *perms.PermissionRequest) *perms.Permissi
 	case "AskUserQuestion":
 		return s.handleAskUserQuestion(req)
 	case "EnterPlanMode", "ExitPlanMode":
-		return s.handlePlanModePermission(req)
+		// Approval prompt is shown from the tool_use handler
+		// (approvePlanModeTransition). Wait for its result here so Claude
+		// gets the correct allow/deny MCP response.
+		select {
+		case approved := <-s.planApproval:
+			if approved {
+				return &perms.PermissionResponse{Behavior: "allow"}
+			}
+			return &perms.PermissionResponse{Behavior: "deny", Message: "denied via Slack"}
+		case <-s.ctx.Done():
+			return &perms.PermissionResponse{Behavior: "deny", Message: "session cancelled"}
+		}
 	}
 
 	// Classify via AI
@@ -581,78 +592,22 @@ func (s *Session) handlePermission(req *perms.PermissionRequest) *perms.Permissi
 	return &perms.PermissionResponse{Behavior: "deny", Message: "permission request timed out"}
 }
 
-// handlePlanModePermission handles Enter/ExitPlanMode permission requests.
-// Posts a prompt to Slack and only transitions mode after owner approval.
-func (s *Session) handlePlanModePermission(req *perms.PermissionRequest) *perms.PermissionResponse {
-	isEnter := req.ToolName == "EnterPlanMode"
-	label := "exit"
-	if isEnter {
-		label = "enter"
-	}
-
-	// Without Slack thread, auto-approve
-	if s.thread == nil {
-		s.ui.ToolActivity(fmt.Sprintf("  ✅ %s plan mode", label))
-		return &perms.PermissionResponse{Behavior: "allow"}
-	}
-
-	emoji := s.thread.Emoji()
-	prompt := fmt.Sprintf("%s 🗳️ *Claude wants to %s plan mode.*", emoji, label)
-	if ownerID := s.thread.OwnerID(); ownerID != "" {
-		prompt += fmt.Sprintf(" <@%s>", ownerID)
-	}
-
-	reactions := []string{"white_check_mark", "x"}
-	msgTS, err := s.thread.PostPrompt(prompt, reactions)
-	if err != nil {
-		return &perms.PermissionResponse{Behavior: "deny", Message: "failed to post prompt"}
-	}
-
-	// Poll for owner reaction
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-	deadline := time.Now().Add(permissionTimeout)
-	for time.Now().Before(deadline) {
+// approvePlanModeTransition posts a Slack prompt for plan mode enter/exit,
+// waits for the owner's reaction, and transitions mode on approval.
+// toolInput is the raw JSON tool input (used to extract the plan on exit).
+// Signals the result on s.planApproval so the MCP handler can relay it to Claude.
+func (s *Session) approvePlanModeTransition(isEnter bool, toolInput string) {
+	// Signal result so handlePlanModePermission (MCP goroutine) can respond.
+	approved := false
+	defer func() {
 		select {
-		case <-s.ctx.Done():
-			s.thread.DeleteMessage(msgTS)
-			return &perms.PermissionResponse{Behavior: "deny", Message: "session cancelled"}
-		case <-ticker.C:
+		case s.planApproval <- approved:
+		default:
 		}
-		selected, err := s.thread.PollReaction(msgTS, reactions)
-		if err != nil {
-			continue
-		}
-		switch selected {
-		case "white_check_mark":
-			s.thread.DeleteMessage(msgTS)
-			if isEnter {
-				s.thread.SetModeSuffix(" — 📋 planning")
-				s.thread.Post(emoji + " 📋 Entered plan mode")
-			} else {
-				s.thread.SetModeSuffix("")
-				s.thread.Post(emoji + " ⚡ Exited plan mode")
-			}
-			s.ui.ToolActivity(fmt.Sprintf("  ✅ Approved: %s plan mode", label))
-			return &perms.PermissionResponse{Behavior: "allow"}
-		case "x":
-			s.thread.DeleteMessage(msgTS)
-			s.ui.ToolActivity(fmt.Sprintf("  ❌ Denied: %s plan mode", label))
-			return &perms.PermissionResponse{Behavior: "deny", Message: "denied via Slack"}
-		}
-	}
+	}()
 
-	s.thread.DeleteMessage(msgTS)
-	s.ui.ToolActivity(fmt.Sprintf("  ⏰ Timed out: %s plan mode", label))
-	return &perms.PermissionResponse{Behavior: "deny", Message: "timed out"}
-}
-
-// approvePlanModeTransition handles plan mode tools that bypass the MCP
-// permission system (e.g. EnterPlanMode). Posts a prompt to Slack, waits
-// for the owner's reaction, and transitions mode on approval.
-// Called from readTurn when the MCP handler did NOT already handle the tool.
-func (s *Session) approvePlanModeTransition(isEnter bool) {
 	if s.thread == nil {
+		approved = true
 		return
 	}
 
@@ -697,8 +652,14 @@ func (s *Session) approvePlanModeTransition(isEnter bool) {
 			} else {
 				s.thread.SetModeSuffix("")
 				s.thread.Post(emoji + " ⚡ Exited plan mode")
+
+				// Post the plan as a code block
+				if block := toolCodeBlock("ExitPlanMode", toolInput); block != "" {
+					s.thread.Post(emoji + " " + block)
+				}
 			}
 			s.ui.ToolActivity(fmt.Sprintf("  ✅ Approved: %s plan mode", label))
+			approved = true
 			return
 		case "x":
 			s.thread.DeleteMessage(msgTS)

@@ -201,13 +201,9 @@ func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 				if p := interactivePrompt(evt.ToolName, evt.ToolInput, s.thread.OwnerID(), s.thread.Emoji()); p != nil {
 					s.thread.PostPrompt(p.text, p.reactions)
 					tt.Clear()
-				} else if evt.ToolName == "EnterPlanMode" {
-					// EnterPlanMode bypasses MCP permission — handle approval here.
+				} else if evt.ToolName == "EnterPlanMode" || evt.ToolName == "ExitPlanMode" {
 					tt.SplitTurn()
-					s.approvePlanModeTransition(true)
-				} else if evt.ToolName == "ExitPlanMode" {
-					// ExitPlanMode goes through MCP permission (handlePlanModePermission).
-					tt.SplitTurn()
+					s.approvePlanModeTransition(evt.ToolName == "EnterPlanMode", evt.ToolInput)
 				} else if evt.ToolName == "AskUserQuestion" {
 					if hasQuestionsFormat(evt.ToolInput) {
 						tt.SplitTurn()
@@ -224,14 +220,12 @@ func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 				}
 			}
 
-			// NOTE: EnterPlanMode/ExitPlanMode transitions are handled in
-			// handlePlanModePermission (after owner approval), NOT here.
-			// Announcing transitions on tool_use would bypass permission checks.
-
 			if evt.ToolName == "TodoWrite" {
 				s.updateTodos(evt.ToolInput)
 			}
-			if s.thread != nil {
+			// Post code blocks for Edit/Write. ExitPlanMode plan is posted
+			// after approval in approvePlanModeTransition.
+			if s.thread != nil && evt.ToolName != "ExitPlanMode" {
 				if block := toolCodeBlock(evt.ToolName, evt.ToolInput); block != "" {
 					s.thread.Post(s.thread.Emoji() + " " + block)
 				}
