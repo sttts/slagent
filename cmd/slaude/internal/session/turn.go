@@ -25,6 +25,7 @@ type toolTracker struct {
 func (tt *toolTracker) SplitTurn() {
 	tt.Clear()
 	if tt.turn != nil {
+		tt.turn.DeleteActivity()
 		tt.turn.Finish()
 	}
 	if tt.thread != nil {
@@ -209,11 +210,7 @@ func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 					tt.SplitTurn()
 				} else if evt.ToolName == "AskUserQuestion" {
 					if hasQuestionsFormat(evt.ToolInput) {
-						tt.Finish()
-						tt.turn.DeleteActivity()
-
-						// Start a new turn so the response appears below the questions
-						tt.turn = tt.thread.NewTurn()
+						tt.SplitTurn()
 					} else {
 						var prefix string
 						if ownerID := s.thread.OwnerID(); ownerID != "" {
