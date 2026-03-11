@@ -10,6 +10,7 @@ import (
 type slackPaths struct {
 	LevelDB string // directory containing LevelDB files
 	Cookies string // path to Cookies SQLite database
+	IsSnap  bool   // true if Slack is installed via Snap
 }
 
 // findSlackPaths returns all existing Slack data directories on this system.
@@ -42,6 +43,11 @@ func findSlackPaths() []slackPaths {
 			{
 				LevelDB: filepath.Join(home, ".config", "Slack", "Local Storage", "leveldb"),
 				Cookies: filepath.Join(home, ".config", "Slack", "Cookies"),
+			},
+			{
+				LevelDB: filepath.Join(home, "snap", "slack", "current", ".config", "Slack", "Local Storage", "leveldb"),
+				Cookies: filepath.Join(home, "snap", "slack", "current", ".config", "Slack", "Cookies"),
+				IsSnap:  true,
 			},
 		}
 		// Snap versions: ~/snap/slack/{current,common}/.config/Slack/
