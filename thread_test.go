@@ -2409,3 +2409,182 @@ func TestAdvanceLastTS(t *testing.T) {
 		t.Errorf("lastTS = %q, want 1700000005.000000 (should not regress)", thread.lastTS)
 	}
 }
+
+func TestOtherInstanceFilteredInClosedMode(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "C_TEST",
+		WithOwner("U_OWNER"),
+		WithInstanceID("fox"),
+	)
+	thread.Start("Test")
+
+	// Other slagent instance posts a finalized message
+	mock.injectSlagentReply("C_TEST", thread.ThreadTS(), "hello from dog", "slagent-dog")
+
+	// In closed mode (default), other-instance messages should be filtered
+	replies, err := thread.PollReplies()
+	if err != nil {
+		t.Fatalf("PollReplies: %v", err)
+	}
+	if len(replies) != 0 {
+		t.Errorf("got %d replies, want 0 (other-instance messages should be filtered in closed mode)", len(replies))
+	}
+}
+
+func TestOtherInstanceVisibleInObserveMode(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "C_TEST",
+		WithOwner("U_OWNER"),
+		WithInstanceID("fox"),
+		WithObserve(),
+	)
+	thread.Start("Test")
+
+	// Other slagent instance posts a finalized message
+	mock.injectSlagentReply("C_TEST", thread.ThreadTS(), "hello from dog", "slagent-dog")
+
+	// In observe mode, other-instance messages should be delivered
+	replies, err := thread.PollReplies()
+	if err != nil {
+		t.Fatalf("PollReplies: %v", err)
+	}
+	if len(replies) != 1 {
+		t.Fatalf("got %d replies, want 1 (other-instance messages should be visible in observe mode)", len(replies))
+	}
+	if replies[0].Text != "hello from dog" {
+		t.Errorf("reply text = %q, want %q", replies[0].Text, "hello from dog")
+	}
+}
+
+func TestOtherInstanceVisibleInOpenMode(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "C_TEST",
+		WithOwner("U_OWNER"),
+		WithInstanceID("fox"),
+	)
+	thread.Start("Test")
+
+	// Open the thread
+	thread.handleCommand("U_OWNER", "/open")
+
+	// Other slagent instance posts a finalized message
+	mock.injectSlagentReply("C_TEST", thread.ThreadTS(), "hello from dog", "slagent-dog")
+
+	// In open mode, other-instance messages should be delivered
+	replies, err := thread.PollReplies()
+	if err != nil {
+		t.Fatalf("PollReplies: %v", err)
+	}
+	if len(replies) != 1 {
+		t.Fatalf("got %d replies, want 1 (other-instance messages should be visible in open mode)", len(replies))
+	}
+}
+
+func TestOtherInstanceStreamingSkipped(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "C_TEST",
+		WithOwner("U_OWNER"),
+		WithInstanceID("fox"),
+		WithObserve(),
+	)
+	thread.Start("Test")
+
+	// Other instance streaming (not finalized yet) — should be skipped
+	mock.injectSlagentReply("C_TEST", thread.ThreadTS(), "typing...", "slagent-dog~")
+
+	replies, err := thread.PollReplies()
+	if err != nil {
+		t.Fatalf("PollReplies: %v", err)
+	}
+	if len(replies) != 0 {
+		t.Errorf("got %d replies, want 0 (streaming messages should be skipped)", len(replies))
+	}
+}
+
+func TestOtherInstanceActivitySkipped(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "C_TEST",
+		WithOwner("U_OWNER"),
+		WithInstanceID("fox"),
+		WithObserve(),
+	)
+	thread.Start("Test")
+
+	// Other instance activity message — always skipped
+	mock.injectSlagentReply("C_TEST", thread.ThreadTS(), "running tool", "slagent-dog~act")
+
+	replies, err := thread.PollReplies()
+	if err != nil {
+		t.Fatalf("PollReplies: %v", err)
+	}
+	if len(replies) != 0 {
+		t.Errorf("got %d replies, want 0 (activity messages should always be skipped)", len(replies))
+	}
+}
+
+func TestOwnInstanceFinalSkipped(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "C_TEST",
+		WithOwner("U_OWNER"),
+		WithInstanceID("fox"),
+		WithObserve(),
+	)
+	thread.Start("Test")
+
+	// Own finalized message — always skipped
+	mock.injectSlagentReply("C_TEST", thread.ThreadTS(), "my own message", "slagent-fox")
+
+	replies, err := thread.PollReplies()
+	if err != nil {
+		t.Fatalf("PollReplies: %v", err)
+	}
+	if len(replies) != 0 {
+		t.Errorf("got %d replies, want 0 (own messages should always be skipped)", len(replies))
+	}
+}
+
+func TestObserveModeToggleFiltersOtherInstance(t *testing.T) {
+	mock := newMockSlack()
+	defer mock.close()
+
+	thread := NewThread(mock.client(), "C_TEST",
+		WithOwner("U_OWNER"),
+		WithInstanceID("fox"),
+	)
+	thread.Start("Test")
+
+	// Initially closed — other-instance filtered
+	mock.injectSlagentReply("C_TEST", thread.ThreadTS(), "msg1", "slagent-dog")
+	replies, _ := thread.PollReplies()
+	if len(replies) != 0 {
+		t.Error("closed mode: other-instance message should be filtered")
+	}
+
+	// Enable observe — other-instance visible
+	thread.handleCommand("U_OWNER", "/observe")
+	mock.injectSlagentReply("C_TEST", thread.ThreadTS(), "msg2", "slagent-dog")
+	replies, _ = thread.PollReplies()
+	if len(replies) != 1 {
+		t.Errorf("observe mode: got %d replies, want 1", len(replies))
+	}
+
+	// Disable observe — other-instance filtered again
+	thread.handleCommand("U_OWNER", "/observe")
+	mock.injectSlagentReply("C_TEST", thread.ThreadTS(), "msg3", "slagent-dog")
+	replies, _ = thread.PollReplies()
+	if len(replies) != 0 {
+		t.Error("after observe off: other-instance message should be filtered")
+	}
+}

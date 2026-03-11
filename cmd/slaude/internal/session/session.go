@@ -133,6 +133,11 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 		}
 	}
 
+	// Use the instance emoji in terminal output (e.g. "🦊 Claude:" instead of "🤖 Claude:")
+	if sess.thread != nil {
+		ui.SetIdentity(sess.thread.Emoji())
+	}
+
 	extraArgs := sess.buildExtraArgs()
 
 	// Start permission listener for Slack-based tool approval

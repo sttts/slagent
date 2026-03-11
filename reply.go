@@ -92,7 +92,15 @@ func (t *Thread) pollOnce() ([]Reply, error) {
 				t.advanceLastTS(msg.Timestamp)
 				continue
 			}
-			// Other instances' finalized text — deliver so agent perceives it
+
+			// Other instances' finalized text — only deliver when agent sees all messages
+			t.mu.Lock()
+			visible := t.openAccess || t.observe || t.ownerID == ""
+			t.mu.Unlock()
+			if !visible {
+				t.advanceLastTS(msg.Timestamp)
+				continue
+			}
 		case blockNone:
 			// Not a slagent message — skip bot messages (webhooks, integrations)
 			if msg.BotID != "" {

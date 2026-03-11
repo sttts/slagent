@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	"github.com/sttts/slagent"
 )
 
 // ANSI escape sequences.
@@ -24,18 +26,24 @@ const (
 // UI provides simple terminal output for slaude sessions.
 type UI struct {
 	w         io.Writer
-	streaming bool // true while Claude is streaming text
-	textSeen  bool // true after first text chunk in a response
+	streaming bool   // true while Claude is streaming text
+	textSeen  bool   // true after first text chunk in a response
+	identity  string // identity emoji for this instance (e.g. "🦊"), defaults to "🤖"
 }
 
 // New creates a new terminal UI that writes to stdout.
 func New() *UI {
-	return &UI{w: os.Stdout}
+	return &UI{w: os.Stdout, identity: "🤖"}
 }
 
 // NewWithWriter creates a UI that writes to w (useful for testing).
 func NewWithWriter(w io.Writer) *UI {
-	return &UI{w: w}
+	return &UI{w: w, identity: "🤖"}
+}
+
+// SetIdentity sets the identity emoji used in response headers (e.g. "🦊").
+func (u *UI) SetIdentity(emoji string) {
+	u.identity = emoji
 }
 
 // BannerOpts configures the banner display.
@@ -85,7 +93,7 @@ func (u *UI) Banner(opts BannerOpts) {
 
 // StartResponse begins a Claude response block.
 func (u *UI) StartResponse() {
-	fmt.Fprintf(u.w, "%s%s🤖 Claude:%s ", bold, green, reset)
+	fmt.Fprintf(u.w, "%s%s%s Claude:%s ", bold, green, u.identity, reset)
 	u.streaming = true
 	u.textSeen = false
 }
@@ -123,6 +131,7 @@ func (u *UI) ToolActivity(summary string) {
 
 // SlackMessage shows a message received from Slack.
 func (u *UI) SlackMessage(user, text string) {
+	text = slagent.ShortcodesToUnicode(text)
 	fmt.Fprintf(u.w, "  %s💬 @%s:%s %s\n", cyan, user, reset, text)
 }
 
