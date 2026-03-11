@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/sttts/slagent"
 	"github.com/sttts/slagent/cmd/slaude/internal/claude"
@@ -189,6 +190,18 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 		if err := sess.startThread(); err != nil {
 			return nil, err
 		}
+		// Register session state so 'slaude ps' and 'slaude kill' can find it.
+		pid := os.Getpid()
+		_ = RegisterSession(SessionState{
+			PID:        pid,
+			Emoji:      sess.thread.Emoji(),
+			InstanceID: sess.thread.InstanceID(),
+			Channel:    cfg.ChannelName,
+			ThreadURL:  sess.thread.URL(),
+			Workspace:  cfg.Workspace,
+			StartedAt:  time.Now().Unix(),
+		})
+		defer UnregisterSession(pid)
 	}
 
 	// Hide cursor during session, restore on exit
