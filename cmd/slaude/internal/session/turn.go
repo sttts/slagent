@@ -67,6 +67,7 @@ type eventOrErr struct {
 func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 	s.ui.StartResponse()
 	var fullText strings.Builder
+	hadOutput := false
 
 	// Set up slagent turn for Slack streaming
 	var turn slagent.Turn
@@ -129,6 +130,7 @@ func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 
 		switch evt.Type {
 		case "text_delta":
+			hadOutput = true
 			s.ui.StreamText(evt.Text)
 			fullText.WriteString(evt.Text)
 			if turn != nil {
@@ -151,6 +153,7 @@ func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 			}
 
 		case "tool_start":
+			hadOutput = true
 			tt.Start(evt.ToolName)
 			s.ui.ToolActivity(formatToolStart(evt.ToolName))
 
@@ -222,6 +225,14 @@ func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 			if turn != nil {
 				turn.Finish()
 			}
+
+			// Track silent turns for thinking activity suppression
+			if hadOutput {
+				s.silentTurnsLeft = 3
+			} else if s.silentTurnsLeft > 0 {
+				s.silentTurnsLeft--
+			}
+
 			s.repostTodos()
 			return nil
 
@@ -240,6 +251,12 @@ func (s *Session) startThinking() slagent.Turn {
 	if s.thread == nil {
 		return nil
 	}
+
+	// Suppress thinking activity after too many silent turns
+	if s.silentTurnsLeft <= 0 {
+		return nil
+	}
+
 	turn := s.thread.NewTurn()
 	turn.Thinking(" ")
 	return turn

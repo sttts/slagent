@@ -69,6 +69,9 @@ type Session struct {
 
 	// Known-safe network destinations (for auto-approve with "known" level)
 	knownHosts *knownHostSet
+
+	// Silent turn suppression: stop showing thinking activity after N silent turns
+	silentTurnsLeft int // decremented on silent turns, reset on output
 }
 
 // todo is a single item from Claude's TodoWrite tool.
@@ -103,7 +106,8 @@ func Run(ctx context.Context, cfg Config) (*ResumeInfo, error) {
 		cancel:      cancel,
 		replyNotify: make(chan struct{}, 1),
 		stopNotify:  make(chan struct{}, 1),
-		knownHosts:  loadKnownHosts(),
+		knownHosts:      loadKnownHosts(),
+		silentTurnsLeft: 3,
 	}
 
 	// Open debug log
