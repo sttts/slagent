@@ -38,11 +38,26 @@ func findSlackPaths() []slackPaths {
 		}
 	case "linux":
 		candidates = []slackPaths{
+			// Standard .deb/.rpm install
 			{
 				LevelDB: filepath.Join(home, ".config", "Slack", "Local Storage", "leveldb"),
 				Cookies: filepath.Join(home, ".config", "Slack", "Cookies"),
 			},
 		}
+		// Snap versions: ~/snap/slack/{current,common}/.config/Slack/
+		for _, sub := range []string{"current", "common"} {
+			snapSlack := filepath.Join(home, "snap", "slack", sub, ".config", "Slack")
+			candidates = append(candidates, slackPaths{
+				LevelDB: filepath.Join(snapSlack, "Local Storage", "leveldb"),
+				Cookies: filepath.Join(snapSlack, "Cookies"),
+			})
+		}
+		// Flatpak version: ~/.var/app/com.slack.Slack/config/Slack/
+		flatpakSlack := filepath.Join(home, ".var", "app", "com.slack.Slack", "config", "Slack")
+		candidates = append(candidates, slackPaths{
+			LevelDB: filepath.Join(flatpakSlack, "Local Storage", "leveldb"),
+			Cookies: filepath.Join(flatpakSlack, "Cookies"),
+		})
 	}
 
 	// Filter to paths that exist
