@@ -9,12 +9,27 @@ import (
 )
 
 // toolTracker tracks tool state for Slack turn updates during a readTurn loop.
+// It owns the current Turn so that approval-boundary splits can be done in one place.
 type toolTracker struct {
 	turn   slagent.Turn
+	thread *slagent.Thread // for creating new turns on split
 	seq    int
 	id     string // current tool ID ("t1", "t2", ...)
 	name   string // current tool name
 	detail string // current tool detail
+}
+
+// SplitTurn ends the current Slack turn and starts a fresh one.
+// Used at approval boundaries (plan mode, questions) so text before and after
+// the boundary appears in separate Slack messages.
+func (tt *toolTracker) SplitTurn() {
+	tt.Clear()
+	if tt.turn != nil {
+		tt.turn.Finish()
+	}
+	if tt.thread != nil {
+		tt.turn = tt.thread.NewTurn()
+	}
 }
 
 // Start finishes the previous tool (if any) and begins tracking a new one.
@@ -69,14 +84,14 @@ func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 	var fullText strings.Builder
 	hadOutput := false
 
-	// Set up slagent turn for Slack streaming
-	var turn slagent.Turn
+	// Set up slagent turn for Slack streaming.
+	// The toolTracker owns the turn so SplitTurn can replace it at approval boundaries.
+	tt := &toolTracker{thread: s.thread}
 	if len(earlyTurn) > 0 && earlyTurn[0] != nil {
-		turn = earlyTurn[0]
+		tt.turn = earlyTurn[0]
 	} else if s.thread != nil {
-		turn = s.thread.NewTurn()
+		tt.turn = s.thread.NewTurn()
 	}
-	tt := &toolTracker{turn: turn}
 
 	// Drain stop channel before starting (ignore stale signals)
 	select {
@@ -112,8 +127,8 @@ func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 		}
 
 		if err != nil || evt == nil {
-			if turn != nil {
-				turn.Finish()
+			if tt.turn != nil {
+				tt.turn.Finish()
 			}
 			s.ui.EndResponse()
 
@@ -141,22 +156,22 @@ func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 			hadOutput = true
 			s.ui.StreamText(evt.Text)
 			fullText.WriteString(evt.Text)
-			if turn != nil {
-				turn.Text(evt.Text)
+			if tt.turn != nil {
+				tt.turn.Text(evt.Text)
 			}
 
 		case "thinking":
 			s.ui.Thinking(evt.Text)
-			if turn != nil {
-				turn.Thinking(evt.Text)
+			if tt.turn != nil {
+				tt.turn.Thinking(evt.Text)
 			}
 
 		case claude.TypeAssistant:
 			if fullText.Len() == 0 && evt.Text != "" {
 				s.ui.StreamText(evt.Text)
 				fullText.WriteString(evt.Text)
-				if turn != nil {
-					turn.Text(evt.Text)
+				if tt.turn != nil {
+					tt.turn.Text(evt.Text)
 				}
 			}
 
@@ -172,8 +187,8 @@ func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 			if evt.Text != "allowed" {
 				msg := "⏳ Rate limited — waiting..."
 				s.ui.Info(msg)
-				if turn != nil {
-					turn.Status(msg)
+				if tt.turn != nil {
+					tt.turn.Status(msg)
 				}
 			}
 
@@ -181,43 +196,34 @@ func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 			tt.Update(evt.ToolName, toolDetail(evt.ToolName, evt.ToolInput))
 			s.ui.ToolActivity(formatTool(evt.ToolName, evt.ToolInput))
 
-			if turn != nil {
+			if tt.turn != nil {
 				if p := interactivePrompt(evt.ToolName, evt.ToolInput, s.thread.OwnerID(), s.thread.Emoji()); p != nil {
 					s.thread.PostPrompt(p.text, p.reactions)
 					tt.Clear()
 				} else if evt.ToolName == "EnterPlanMode" {
 					// EnterPlanMode bypasses MCP permission — handle approval here.
-					// Finish current turn so pre-plan text is its own message.
-					tt.Clear()
-					turn.Finish()
+					tt.SplitTurn()
 					s.approvePlanModeTransition(true)
-					turn = s.thread.NewTurn()
-					tt.turn = turn
 				} else if evt.ToolName == "ExitPlanMode" {
 					// ExitPlanMode goes through MCP permission (handlePlanModePermission).
-					// Finish current turn so plan-mode text doesn't merge with execution output.
-					tt.Clear()
-					turn.Finish()
-					turn = s.thread.NewTurn()
-					tt.turn = turn
+					tt.SplitTurn()
 				} else if evt.ToolName == "AskUserQuestion" {
 					if hasQuestionsFormat(evt.ToolInput) {
 						tt.Finish()
-						turn.DeleteActivity()
+						tt.turn.DeleteActivity()
 
 						// Start a new turn so the response appears below the questions
-						turn = s.thread.NewTurn()
-						tt.turn = turn
+						tt.turn = tt.thread.NewTurn()
 					} else {
 						var prefix string
 						if ownerID := s.thread.OwnerID(); ownerID != "" {
 							prefix = fmt.Sprintf("<@%s>: ", ownerID)
 						}
-						turn.MarkQuestion(prefix)
+						tt.turn.MarkQuestion(prefix)
 					}
 					tt.Clear()
 				} else {
-					turn.Tool(tt.id, evt.ToolName, slagent.ToolRunning, tt.detail)
+					tt.turn.Tool(tt.id, evt.ToolName, slagent.ToolRunning, tt.detail)
 				}
 			}
 
@@ -237,8 +243,8 @@ func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 		case claude.TypeResult:
 			tt.Finish()
 			s.ui.EndResponse()
-			if turn != nil {
-				turn.Finish()
+			if tt.turn != nil {
+				tt.turn.Finish()
 			}
 
 			// Track silent turns for thinking activity suppression

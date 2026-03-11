@@ -135,6 +135,42 @@ func TestToolTrackerClear(t *testing.T) {
 	}
 }
 
+func TestToolTrackerSplitTurnClearsAndFinishes(t *testing.T) {
+	m := &mockTurn{}
+	tt := &toolTracker{turn: m}
+
+	tt.Start("Read")
+	tt.Update("Read", "main.go")
+	tt.SplitTurn()
+
+	if tt.id != "" {
+		t.Errorf("SplitTurn should clear tool id, got %q", tt.id)
+	}
+
+	// Clear resets tool state without emitting a "done" call;
+	// only the initial Start("Read") produces a Tool call.
+	if len(m.calls) != 1 {
+		t.Fatalf("expected 1 call, got %d: %+v", len(m.calls), m.calls)
+	}
+	if m.calls[0].name != "Read" || m.calls[0].status != slagent.ToolRunning {
+		t.Errorf("calls[0] = %+v, want Read/running", m.calls[0])
+	}
+
+	// No thread → turn unchanged (finished but not replaced)
+	if tt.turn != m {
+		t.Error("turn should remain the same mock when thread is nil")
+	}
+}
+
+func TestToolTrackerSplitTurnNilTurn(t *testing.T) {
+	// SplitTurn with nil turn should not panic
+	tt := &toolTracker{}
+	tt.SplitTurn() // should be safe
+	if tt.turn != nil {
+		t.Error("turn should remain nil")
+	}
+}
+
 func TestToolTrackerNilTurn(t *testing.T) {
 	// With nil turn (no Slack), tracking still works but no calls are made
 	tt := &toolTracker{turn: nil}
