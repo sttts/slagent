@@ -2,6 +2,7 @@ package claude
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"syscall"
 )
 
@@ -22,6 +24,9 @@ type Process struct {
 	}
 	scanner   *bufio.Scanner
 	sessionID string
+	stderrBuf *bytes.Buffer // always captures stderr for error reporting
+	waited    sync.Once     // guards cmd.Wait to prevent double-wait
+	waitErr   error         // result of cmd.Wait
 }
 
 // inputMessage is the JSON written to Claude's stdin.
@@ -64,11 +69,15 @@ func Start(ctx context.Context, opts ...Option) (*Process, error) {
 
 	cmd := exec.CommandContext(ctx, "claude", args...)
 	cmd.Env = env
+
+	// Always capture stderr in a buffer for error reporting.
+	// Also tee to the configured stderr destination (os.Stderr by default).
+	stderrBuf := &bytes.Buffer{}
+	stderrDest := io.Writer(os.Stderr)
 	if cfg.stderr != nil {
-		cmd.Stderr = cfg.stderr
-	} else {
-		cmd.Stderr = os.Stderr
+		stderrDest = cfg.stderr
 	}
+	cmd.Stderr = io.MultiWriter(stderrDest, stderrBuf)
 
 	stdinPipe, err := cmd.StdinPipe()
 	if err != nil {
@@ -93,15 +102,19 @@ func Start(ctx context.Context, opts ...Option) (*Process, error) {
 		stdin:     json.NewEncoder(stdinPipe),
 		stdinPipe: stdinPipe,
 		scanner:   scanner,
+		stderrBuf: stderrBuf,
 	}, nil
 }
 
 // Send writes a user message to Claude's stdin.
 func (p *Process) Send(content string) error {
-	return p.stdin.Encode(inputMessage{
+	if err := p.stdin.Encode(inputMessage{
 		Type:    "user",
 		Message: userMessage{Role: "user", Content: content},
-	})
+	}); err != nil {
+		return p.wrapError(err)
+	}
+	return nil
 }
 
 // ReadEvent reads the next event from Claude's stdout.
@@ -109,9 +122,13 @@ func (p *Process) Send(content string) error {
 func (p *Process) ReadEvent() (*Event, error) {
 	if !p.scanner.Scan() {
 		if err := p.scanner.Err(); err != nil {
-			return nil, fmt.Errorf("read stdout: %w", err)
+			return nil, p.wrapError(fmt.Errorf("read stdout: %w", err))
 		}
-		return nil, nil // EOF
+		// EOF — check if the process died unexpectedly.
+		if err := p.wrapError(nil); err != nil {
+			return nil, err
+		}
+		return nil, nil // clean EOF
 	}
 
 	line := p.scanner.Bytes()
@@ -138,7 +155,8 @@ func (p *Process) SessionID() string {
 
 // Wait waits for the subprocess to exit.
 func (p *Process) Wait() error {
-	return p.cmd.Wait()
+	p.waited.Do(func() { p.waitErr = p.cmd.Wait() })
+	return p.waitErr
 }
 
 // Interrupt sends SIGINT to the Claude process, causing it to abort the current
@@ -153,7 +171,33 @@ func (p *Process) Interrupt() error {
 // Stop closes stdin and waits for the process to exit.
 func (p *Process) Stop() error {
 	p.stdinPipe.Close()
-	return p.cmd.Wait()
+	return p.Wait()
+}
+
+// wrapError enriches an error with stderr output and exit code when the
+// claude process has already exited. If origErr is nil and the process
+// exited cleanly, it returns nil.
+func (p *Process) wrapError(origErr error) error {
+	waitErr := p.Wait()
+	if waitErr == nil {
+		return origErr // process exited cleanly
+	}
+
+	// Process died — build a descriptive error from stderr.
+	stderr := strings.TrimSpace(p.stderrBuf.String())
+
+	// Keep only the last few lines of stderr to avoid overwhelming output.
+	if lines := strings.Split(stderr, "\n"); len(lines) > 10 {
+		stderr = strings.Join(lines[len(lines)-10:], "\n")
+	}
+
+	if stderr != "" {
+		return fmt.Errorf("claude process exited (%v):\n%s", waitErr, stderr)
+	}
+	if origErr != nil {
+		return fmt.Errorf("claude process exited (%v): %w", waitErr, origErr)
+	}
+	return fmt.Errorf("claude process exited (%v)", waitErr)
 }
 
 // Option configures a Process.
