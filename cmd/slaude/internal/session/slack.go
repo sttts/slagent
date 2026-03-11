@@ -115,12 +115,10 @@ func (s *Session) buildExtraArgs() []string {
 
 	// Load SOUL.md content (working directory first, then ~/.config/slagent/).
 	var soulContent string
-	if findArg(args, "--soul") < 0 {
-		for _, path := range soulPaths() {
-			if content, err := os.ReadFile(path); err == nil {
-				soulContent = string(content)
-				break
-			}
+	for _, path := range soulPaths() {
+		if content, err := os.ReadFile(path); err == nil {
+			soulContent = string(content)
+			break
 		}
 	}
 
