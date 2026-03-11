@@ -78,11 +78,6 @@ type Session struct {
 
 	// Claude subprocess args for restart after interrupt
 	claudeExtraArgs []string
-
-	// Plan mode dedup: set by handlePlanModePermission (MCP path) so the
-	// tool_use handler in readTurn doesn't double-prompt.
-	planModeMu      sync.Mutex
-	planModeHandled bool
 }
 
 // todo is a single item from Claude's TodoWrite tool.

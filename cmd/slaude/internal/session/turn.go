@@ -185,20 +185,16 @@ func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 				if p := interactivePrompt(evt.ToolName, evt.ToolInput, s.thread.OwnerID(), s.thread.Emoji()); p != nil {
 					s.thread.PostPrompt(p.text, p.reactions)
 					tt.Clear()
-				} else if evt.ToolName == "EnterPlanMode" || evt.ToolName == "ExitPlanMode" {
-					// Clear activity so the tool doesn't linger in Slack.
+				} else if evt.ToolName == "EnterPlanMode" {
+					// EnterPlanMode bypasses MCP permission — handle approval here.
 					tt.Clear()
 					turn.DeleteActivity()
-
-					// If MCP permission already handled this (ExitPlanMode), skip.
-					// Otherwise block here for Slack approval (EnterPlanMode bypasses MCP).
-					s.planModeMu.Lock()
-					handled := s.planModeHandled
-					s.planModeHandled = false
-					s.planModeMu.Unlock()
-					if !handled {
-						s.approvePlanModeTransition(evt.ToolName == "EnterPlanMode")
-					}
+					s.approvePlanModeTransition(true)
+				} else if evt.ToolName == "ExitPlanMode" {
+					// ExitPlanMode goes through MCP permission (handlePlanModePermission).
+					// Just clear activity; the MCP handler posts the prompt.
+					tt.Clear()
+					turn.DeleteActivity()
 				} else if evt.ToolName == "AskUserQuestion" {
 					if hasQuestionsFormat(evt.ToolInput) {
 						tt.Finish()

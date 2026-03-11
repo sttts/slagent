@@ -185,6 +185,14 @@ func toolCodeBlock(toolName, rawInput string) string {
 		preview = strings.ReplaceAll(preview, "```", "'''")
 		label := fmt.Sprintf("📝 %s (new, %d lines)", name, len(strings.Split(content, "\n")))
 		return fmt.Sprintf("%s\n```\n%s\n```", label, preview)
+
+	case "ExitPlanMode":
+		plan := str("plan")
+		if plan == "" {
+			return ""
+		}
+		plan = strings.ReplaceAll(plan, "```", "'''")
+		return fmt.Sprintf("📋 Plan\n```\n%s\n```", plan)
 	}
 	return ""
 }

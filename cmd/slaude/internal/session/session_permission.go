@@ -633,10 +633,6 @@ func (s *Session) handlePlanModePermission(req *perms.PermissionRequest) *perms.
 				s.thread.SetModeSuffix("")
 				s.thread.Post(emoji + " ⚡ Exited plan mode")
 			}
-			// Mark as handled so the tool_use handler in readTurn skips
-			s.planModeMu.Lock()
-			s.planModeHandled = true
-			s.planModeMu.Unlock()
 			s.ui.ToolActivity(fmt.Sprintf("  ✅ Approved: %s plan mode", label))
 			return &perms.PermissionResponse{Behavior: "allow"}
 		case "x":
