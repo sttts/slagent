@@ -23,7 +23,7 @@ func Extract() (*Result, error) {
 			continue
 		}
 
-		cookie, err := extractCookie(p.Cookies)
+		cookie, err := extractCookie(p.Cookies, p.IsSnap)
 		if err != nil {
 			lastErr = fmt.Errorf("extract cookie from %s: %w", p.Cookies, err)
 			continue

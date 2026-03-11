@@ -20,7 +20,7 @@ const (
 )
 
 // decryptCookieValue decrypts a Chromium-encrypted cookie blob.
-func decryptCookieValue(encrypted []byte) (string, error) {
+func decryptCookieValue(encrypted []byte, isSnap bool) (string, error) {
 	// Strip "v10" or "v11" prefix (3 bytes)
 	if len(encrypted) < 3 {
 		return "", fmt.Errorf("encrypted value too short (%d bytes)", len(encrypted))
@@ -32,7 +32,7 @@ func decryptCookieValue(encrypted []byte) (string, error) {
 	ciphertext := encrypted[3:]
 
 	// Get passphrase from OS keystore
-	passphrase, err := getPassphrase()
+	passphrase, err := getPassphrase(isSnap)
 	if err != nil {
 		return "", fmt.Errorf("get passphrase: %w", err)
 	}
@@ -80,7 +80,7 @@ func decryptCookieValue(encrypted []byte) (string, error) {
 }
 
 // getPassphrase retrieves the Slack encryption passphrase from the OS keystore.
-func getPassphrase() ([]byte, error) {
+func getPassphrase(isSnap bool) ([]byte, error) {
 	switch runtime.GOOS {
 	case "darwin":
 		out, err := exec.Command("security", "find-generic-password",
@@ -91,6 +91,15 @@ func getPassphrase() ([]byte, error) {
 		return []byte(strings.TrimSpace(string(out))), nil
 
 	case "linux":
+		// For Snap installations, the keyring is isolated inside the Snap's
+		// confinement. We must query it from inside the Snap environment.
+		if isSnap {
+			out, err := getSnapPassphrase()
+			if err == nil && len(out) > 0 {
+				return out, nil
+			}
+		}
+
 		// Try secret-tool (GNOME Keyring / Secret Service)
 		out, err := exec.Command("secret-tool", "lookup", "application", "Slack").Output()
 		if err == nil && len(out) > 0 {
@@ -102,6 +111,37 @@ func getPassphrase() ([]byte, error) {
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}
+}
+
+// getSnapPassphrase retrieves the Slack OSCrypt password from inside the Snap's
+// isolated GNOME Keyring by running a Python script within the Snap confinement.
+func getSnapPassphrase() ([]byte, error) {
+	script := `import ctypes,ctypes.util,sys
+ls=ctypes.CDLL(ctypes.util.find_library("secret-1"))
+class A(ctypes.Structure):
+ _fields_=[("n",ctypes.c_char_p),("t",ctypes.c_int)]
+class S(ctypes.Structure):
+ _fields_=[("n",ctypes.c_char_p),("f",ctypes.c_int),("a",A*32)]
+s=S()
+s.n=b"chrome_libsecret_os_crypt_password_v2"
+s.f=2
+s.a[0]=A(b"application",0)
+s.a[1]=A(None,0)
+ls.secret_password_lookup_sync.restype=ctypes.c_void_p
+e=ctypes.c_void_p(0)
+r=ls.secret_password_lookup_sync(ctypes.byref(s),None,ctypes.byref(e),b"application",b"Slack",None)
+if r:sys.stdout.write(ctypes.string_at(r).decode("utf-8"))
+else:sys.exit(1)`
+
+	out, err := exec.Command("snap", "run", "--shell", "slack.slack", "-c",
+		"python3 -c '"+script+"'").Output()
+	if err != nil {
+		return nil, fmt.Errorf("snap passphrase extraction failed: %w", err)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("snap passphrase extraction returned empty result")
+	}
+	return []byte(strings.TrimSpace(string(out))), nil
 }
 
 // removePKCS7Padding removes PKCS#7 padding from decrypted data.

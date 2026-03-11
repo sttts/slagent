@@ -10,7 +10,7 @@ import (
 )
 
 // extractCookie reads and decrypts the 'd' cookie from Slack's Cookies SQLite DB.
-func extractCookie(cookiesPath string) (string, error) {
+func extractCookie(cookiesPath string, isSnap bool) (string, error) {
 	// Copy to temp file (Slack may hold a WAL lock)
 	tmpFile, err := os.CreateTemp("", "slagent-cookies-*.sqlite")
 	if err != nil {
@@ -61,7 +61,7 @@ func extractCookie(cookiesPath string) (string, error) {
 		return plainValue, nil
 	}
 
-	return decryptCookieValue(encrypted)
+	return decryptCookieValue(encrypted, isSnap)
 }
 
 // copyFileForCookie is a helper that copies a file for cookie extraction.
