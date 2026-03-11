@@ -1,15 +1,12 @@
 package session
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strings"
-	"sync"
 )
 
 func currentUser() string {
@@ -336,34 +333,6 @@ func soulPaths() []string {
 	return paths
 }
 
-// claudeSupportsSoul probes whether the claude binary accepts --soul.
-// Result is cached after the first call.
-var (
-	claudeSoulOnce      sync.Once
-	claudeSoulSupported bool
-)
-
-func claudeSupportsSoul(claudeBin string) bool {
-	claudeSoulOnce.Do(func() {
-		out, _ := exec.Command(claudeBin, "--help").CombinedOutput() //nolint:gosec
-		claudeSoulSupported = bytes.Contains(out, []byte("--soul"))
-	})
-	return claudeSoulSupported
-}
-
-// appendSoulArg adds soul/system-prompt args for the given SOUL.md path.
-// If the claude binary supports --soul it uses that; otherwise it reads the
-// file and falls back to --system-prompt.
-func appendSoulArg(args []string, claudeBin, soulPath string) []string {
-	if claudeSupportsSoul(claudeBin) {
-		return append(args, "--soul", soulPath)
-	}
-	content, err := os.ReadFile(soulPath) //nolint:gosec
-	if err != nil {
-		return args
-	}
-	return append(args, "--system-prompt", string(content))
-}
 
 // truncate shortens s to max characters with "..." suffix.
 func truncate(s string, max int) string {

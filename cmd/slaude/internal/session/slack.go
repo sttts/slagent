@@ -113,17 +113,18 @@ func (s *Session) connectSlack() error {
 func (s *Session) buildExtraArgs() []string {
 	args := append([]string{}, s.cfg.ClaudeArgs...)
 
-	// Load SOUL.md — use --soul if supported, otherwise fall back to --system-prompt.
-	if findArg(args, "--soul") < 0 && findArg(args, "--system-prompt") < 0 {
+	// Load SOUL.md content (working directory first, then ~/.config/slagent/).
+	var soulContent string
+	if findArg(args, "--soul") < 0 {
 		for _, path := range soulPaths() {
-			if _, err := os.Stat(path); err == nil {
-				args = appendSoulArg(args, "claude", path)
+			if content, err := os.ReadFile(path); err == nil {
+				soulContent = string(content)
 				break
 			}
 		}
 	}
 
-	// Append Slack context to --system-prompt if thread is active
+	// Append Slack context (and soul content) to --system-prompt if thread is active
 	if s.thread != nil {
 		emoji := s.thread.Emoji()
 		instanceID := s.thread.InstanceID()
@@ -171,10 +172,22 @@ func (s *Session) buildExtraArgs() []string {
 				"- When outputting tabular data with columns, always wrap it in a code block (```) so it renders with fixed-width alignment in Slack."+
 				"%s",
 			emoji, instanceID, emoji, instanceID, instanceID, instanceID, instanceID, ownerCtx)
+		// Combine soul content + slack context into --system-prompt
+		systemPrompt := slackCtx
+		if soulContent != "" {
+			systemPrompt = soulContent + "\n\n" + systemPrompt
+		}
 		if idx := findArg(args, "--system-prompt"); idx >= 0 && idx+1 < len(args) {
-			args[idx+1] += "\n\n" + slackCtx
+			args[idx+1] += "\n\n" + systemPrompt
 		} else {
-			args = append(args, "--system-prompt", slackCtx)
+			args = append(args, "--system-prompt", systemPrompt)
+		}
+	} else if soulContent != "" {
+		// No Slack thread, but we have soul content — append to system prompt
+		if idx := findArg(args, "--system-prompt"); idx >= 0 && idx+1 < len(args) {
+			args[idx+1] += "\n\n" + soulContent
+		} else {
+			args = append(args, "--append-system-prompt", soulContent)
 		}
 	}
 
