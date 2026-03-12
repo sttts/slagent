@@ -153,15 +153,21 @@ func (cmd *StartCmd) Run() error {
 		if err != nil {
 			return err
 		}
-		if len(cmd.User) > 0 {
-			chID, err := client.ResolveUserChannel(cmd.User...)
+		// Treat -c @username as a user DM
+		users := cmd.User
+		if len(users) == 0 && strings.HasPrefix(cfg.Channel, "@") {
+			users = []string{strings.TrimPrefix(cfg.Channel, "@")}
+		}
+
+		if len(users) > 0 {
+			chID, err := client.ResolveUserChannel(users...)
 			if err != nil {
 				return fmt.Errorf("resolving user: %w", err)
 			}
 			cfg.Channel = chID
 
 			var names []string
-			for _, u := range cmd.User {
+			for _, u := range users {
 				names = append(names, "@"+strings.TrimPrefix(u, "@"))
 			}
 			cfg.ChannelName = strings.Join(names, ", ")
