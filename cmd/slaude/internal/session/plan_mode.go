@@ -2,7 +2,8 @@ package session
 
 import (
 	"fmt"
-	"time"
+
+	"github.com/sttts/slagent"
 )
 
 // approvePlanModeTransition posts a Slack prompt for plan mode enter/exit,
@@ -42,43 +43,34 @@ func (s *Session) approvePlanModeTransition(isEnter bool, toolInput string) {
 	}
 
 	// Poll for owner reaction
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-	deadline := time.Now().Add(permissionTimeout)
-	for time.Now().Before(deadline) {
-		select {
-		case <-s.ctx.Done():
-			s.thread.DeleteMessage(msgTS)
-			return
-		case <-ticker.C:
-		}
-		selected, err := s.thread.PollReaction(msgTS, reactions)
-		if err != nil {
-			continue
-		}
-		switch selected {
-		case "white_check_mark":
-			s.thread.DeleteMessage(msgTS)
-			if isEnter {
-				s.thread.SetModeSuffix(" — 📋 planning")
-				s.thread.Post(emoji + " 📋 Entered plan mode")
-			} else {
-				s.thread.SetModeSuffix("")
-				s.thread.Post(emoji + " ⚡ Exited plan mode")
+	selected, err := slagent.PollReaction(s.ctx, s.thread, msgTS, reactions, permissionTimeout)
+	if err != nil {
+		s.thread.DeleteMessage(msgTS)
+		return
+	}
 
-				// Post the plan as a code block
-				if block := toolCodeBlock("ExitPlanMode", toolInput); block != "" {
-					s.thread.Post(emoji + " " + block)
-				}
+	switch selected {
+	case "white_check_mark":
+		s.thread.DeleteMessage(msgTS)
+		if isEnter {
+			s.thread.SetModeSuffix(" — 📋 planning")
+			s.thread.Post(emoji + " 📋 Entered plan mode")
+		} else {
+			s.thread.SetModeSuffix("")
+			s.thread.Post(emoji + " ⚡ Exited plan mode")
+
+			// Post the plan as a code block
+			if block := toolCodeBlock("ExitPlanMode", toolInput); block != "" {
+				s.thread.Post(emoji + " " + block)
 			}
-			s.ui.ToolActivity(fmt.Sprintf("  ✅ Approved: %s plan mode", label))
-			approved = true
-			return
-		case "x":
-			s.thread.DeleteMessage(msgTS)
-			s.ui.ToolActivity(fmt.Sprintf("  ❌ Denied: %s plan mode", label))
-			return
 		}
+		s.ui.ToolActivity(fmt.Sprintf("  ✅ Approved: %s plan mode", label))
+		approved = true
+		return
+	case "x":
+		s.thread.DeleteMessage(msgTS)
+		s.ui.ToolActivity(fmt.Sprintf("  ❌ Denied: %s plan mode", label))
+		return
 	}
 
 	s.thread.DeleteMessage(msgTS)

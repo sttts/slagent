@@ -8,11 +8,14 @@
 package slagent
 
 import (
+	"context"
 	"crypto/rand"
 	"io"
 	"sort"
 	"strings"
 	"time"
+
+	slackapi "github.com/slack-go/slack"
 )
 
 // Tool status constants for use with Turn.Tool().
@@ -21,6 +24,45 @@ const (
 	ToolDone    = "done"
 	ToolError   = "error"
 )
+
+// Prompter is the interface for interactive prompt flows (permission, plan mode, sandbox).
+// Thread implements this implicitly.
+type Prompter interface {
+	PostPrompt(text string, reactions []string) (string, error)
+	PollReaction(ts string, expected []string) (string, error)
+	DeleteMessage(ts string) error
+	UpdateMessage(ts, text string) error
+	RemoveAllReactions(ts string, reactions []string)
+	AddReaction(ts, name string)
+	GetReactions(ts string) ([]slackapi.ItemReaction, error)
+}
+
+// PollReaction posts a prompt and polls for a reaction until one is selected,
+// the context is cancelled, or the timeout expires. Returns the selected reaction
+// name or "" on timeout/cancel.
+func PollReaction(ctx context.Context, p Prompter, msgTS string,
+	reactions []string, timeout time.Duration) (string, error) {
+
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	deadline := time.Now().Add(timeout)
+
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-ticker.C:
+		}
+		selected, err := p.PollReaction(msgTS, reactions)
+		if err != nil {
+			continue
+		}
+		if selected != "" {
+			return selected, nil
+		}
+	}
+	return "", nil
+}
 
 // Message is a typed event from a thread participant.
 type Message interface{ message() }

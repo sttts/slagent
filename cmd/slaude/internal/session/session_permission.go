@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sttts/slagent"
 	"github.com/sttts/slagent/cmd/slaude/internal/perms"
 )
 
@@ -131,38 +132,29 @@ func (s *Session) handlePermission(req *perms.PermissionRequest) *perms.Permissi
 	}
 
 	// Poll for reaction
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-	deadline := time.Now().Add(permissionTimeout)
-	for time.Now().Before(deadline) {
-		select {
-		case <-s.ctx.Done():
-			s.thread.DeleteMessage(msgTS)
-			return &perms.PermissionResponse{Behavior: "deny", Message: "session cancelled"}
-		case <-ticker.C:
+	selected, err := slagent.PollReaction(s.ctx, s.thread, msgTS, reactions, permissionTimeout)
+	if err != nil {
+		s.thread.DeleteMessage(msgTS)
+		return &perms.PermissionResponse{Behavior: "deny", Message: "session cancelled"}
+	}
+
+	switch selected {
+	case "white_check_mark":
+		s.thread.DeleteMessage(msgTS)
+		s.ui.ToolActivity(fmt.Sprintf("  ✅ Approved: %s: %s", req.ToolName, detail))
+		return &perms.PermissionResponse{Behavior: "allow"}
+	case "floppy_disk":
+		if cls.Network && cls.NetworkDst != "" && cls.NetworkDst != "unknown" {
+			s.knownHosts.add(cls.NetworkDst)
+			s.ui.Info(fmt.Sprintf("  💾 Remembered %s as known host", cls.NetworkDst))
 		}
-		selected, err := s.thread.PollReaction(msgTS, reactions)
-		if err != nil {
-			continue
-		}
-		switch selected {
-		case "white_check_mark":
-			s.thread.DeleteMessage(msgTS)
-			s.ui.ToolActivity(fmt.Sprintf("  ✅ Approved: %s: %s", req.ToolName, detail))
-			return &perms.PermissionResponse{Behavior: "allow"}
-		case "floppy_disk":
-			if cls.Network && cls.NetworkDst != "" && cls.NetworkDst != "unknown" {
-				s.knownHosts.add(cls.NetworkDst)
-				s.ui.Info(fmt.Sprintf("  💾 Remembered %s as known host", cls.NetworkDst))
-			}
-			s.thread.DeleteMessage(msgTS)
-			s.ui.ToolActivity(fmt.Sprintf("  ✅ Approved+saved: %s: %s", req.ToolName, detail))
-			return &perms.PermissionResponse{Behavior: "allow"}
-		case "x":
-			s.thread.DeleteMessage(msgTS)
-			s.ui.ToolActivity(fmt.Sprintf("  ❌ Denied: %s: %s", req.ToolName, detail))
-			return &perms.PermissionResponse{Behavior: "deny", Message: "denied via Slack"}
-		}
+		s.thread.DeleteMessage(msgTS)
+		s.ui.ToolActivity(fmt.Sprintf("  ✅ Approved+saved: %s: %s", req.ToolName, detail))
+		return &perms.PermissionResponse{Behavior: "allow"}
+	case "x":
+		s.thread.DeleteMessage(msgTS)
+		s.ui.ToolActivity(fmt.Sprintf("  ❌ Denied: %s: %s", req.ToolName, detail))
+		return &perms.PermissionResponse{Behavior: "deny", Message: "denied via Slack"}
 	}
 
 	s.thread.DeleteMessage(msgTS)
