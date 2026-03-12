@@ -46,6 +46,19 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Stamp plugin version
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          # Update version in marketplace.json and plugin.json
+          sed -i "s|\"version\": \".*\"|\"version\": \"${TAG}\"|g" \
+            .claude-plugin/marketplace.json \
+            plugins/slaude/.claude-plugin/plugin.json
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .claude-plugin/marketplace.json plugins/slaude/.claude-plugin/plugin.json
+          git diff --cached --quiet || git commit -m "chore: stamp plugin version ${TAG} [skip ci]"
+          git push origin master
+
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
