@@ -20,7 +20,7 @@ slaude join https://<workspace>.slack.com/archives/D1KFZ7GJ0/p1773303415258849
 [![Release](https://github.com/sttts/slagent/actions/workflows/release.yml/badge.svg)](https://github.com/sttts/slagent/actions/workflows/release.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/sttts/slagent)](https://goreportcard.com/report/github.com/sttts/slagent)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Vibe Coded](https://img.shields.io/badge/100%25-vibe_coded-blueviolet?style=for-the-badge)
+![Vibe Coded](https://img.shields.io/badge/100%25-vibe_coded-blueviolet)
 
 ## Quick Start — slaude
 
