@@ -107,7 +107,7 @@ There are four ways to stop a running session:
 Type in the Slack thread:
 - `quit` — ends the session (owner only)
 - `stop` — interrupts the current turn but keeps the session alive (anyone)
-- `:emoji:: quit` — quit a specific instance in multi-agent threads
+- `:emoji: quit` — quit a specific instance in multi-agent threads
 
 ### 2. Via slaude kill (for self-termination or remote stop)
 ```bash
@@ -149,21 +149,19 @@ The resume URL (including `#instanceID@lastTS` fragment) and session ID are prin
 Multiple slaude instances can share one Slack thread. Each gets a unique emoji.
 
 **Addressing instances from Slack:**
-- `:fox_face:: do something` — addressed to the fox instance only
-- `:dog:: /compact` — send a command to the dog instance only
+- `:fox_face: do something` — addressed to the fox instance only
+- `:dog: /compact` — send a command to the dog instance only
 - Messages without prefix — broadcast to all instances
-
-**Important:** The trailing colon after the emoji is required. Type `:shortcode::` in Slack.
 
 ## Thread Access Control
 
 | Command | Effect |
 |---------|--------|
-| `:emoji:: /open` | Open thread for everyone |
-| `:emoji:: /open @user1 @user2` | Allow specific users (additive) |
-| `:emoji:: /lock` | Lock to owner only (resets all, disables observe) |
-| `:emoji:: /lock @user` | Ban a specific user |
-| `:emoji:: /observe` | Toggle observe mode on/off |
+| `:emoji: /open` | Open thread for everyone |
+| `:emoji: /open @user1 @user2` | Allow specific users (additive) |
+| `:emoji: /lock` | Lock to owner only (resets all, disables observe) |
+| `:emoji: /lock @user` | Ban a specific user |
+| `:emoji: /observe` | Toggle observe mode on/off |
 
 **Observe mode** — an orthogonal flag on top of locked/open/selective access:
 - **Off** (default): non-authorized messages filtered out, agent ignores them
@@ -257,5 +255,5 @@ kill -0 $SLAUDE_PID 2>/dev/null && echo "running" || echo "exited"
 | `slaude: command not found` | Install via `brew install sttts/slagent/slaude` or `go install github.com/sttts/slagent/cmd/slaude@latest` |
 | No channels listed | Run `slaude auth` to set up credentials |
 | Permission requests stuck | Check Slack thread for ✅/❌ reaction prompts |
-| Wrong emoji syntax | Use `:shortcode::` (two colons after shortcode), not Unicode emoji |
+| Wrong emoji syntax | Use `:shortcode:` (Slack shortcode syntax), not Unicode emoji |
 | Session won't quit | Only the session owner can `quit`. Others can only `stop` (interrupt). |
