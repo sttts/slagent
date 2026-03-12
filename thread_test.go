@@ -7,6 +7,8 @@ import (
 	"time"
 
 	slackapi "github.com/slack-go/slack"
+
+	"github.com/sttts/slagent/access"
 )
 
 func TestClassifyBlock(t *testing.T) {
@@ -54,12 +56,12 @@ func TestThreadPermissions(t *testing.T) {
 	thread := NewThread(mock.client(), "C_TEST", WithOwner("U_OWNER"))
 
 	// Owner is authorized
-	if !thread.isAuthorized("U_OWNER") {
+	if !thread.IsAuthorized("U_OWNER") {
 		t.Error("owner should be authorized")
 	}
 
 	// Other user is not
-	if thread.isAuthorized("U_OTHER") {
+	if thread.IsAuthorized("U_OTHER") {
 		t.Error("other user should not be authorized")
 	}
 
@@ -67,7 +69,7 @@ func TestThreadPermissions(t *testing.T) {
 	if handled, _ := thread.handleCommand("U_OWNER", "/open"); !handled {
 		t.Error("/open from owner should be handled")
 	}
-	if !thread.isAuthorized("U_OTHER") {
+	if !thread.IsAuthorized("U_OTHER") {
 		t.Error("other user should be authorized after /open")
 	}
 
@@ -75,7 +77,7 @@ func TestThreadPermissions(t *testing.T) {
 	if handled, _ := thread.handleCommand("U_OWNER", "/close"); !handled {
 		t.Error("/close from owner should be handled")
 	}
-	if thread.isAuthorized("U_OTHER") {
+	if thread.IsAuthorized("U_OTHER") {
 		t.Error("other user should not be authorized after /close")
 	}
 
@@ -94,34 +96,34 @@ func TestOpenForSpecificUsers(t *testing.T) {
 	thread := NewThread(mock.client(), "C_TEST", WithOwner("U_OWNER"))
 
 	// By default, only owner is authorized
-	if thread.isAuthorized("U_ALICE") {
+	if thread.IsAuthorized("U_ALICE") {
 		t.Error("alice should not be authorized initially")
 	}
 
 	// /open <@U_ALICE> — allow alice
 	thread.handleCommand("U_OWNER", "/open <@U_ALICE>")
-	if !thread.isAuthorized("U_ALICE") {
+	if !thread.IsAuthorized("U_ALICE") {
 		t.Error("alice should be authorized after /open")
 	}
-	if thread.isAuthorized("U_BOB") {
+	if thread.IsAuthorized("U_BOB") {
 		t.Error("bob should not be authorized")
 	}
 
 	// /open <@U_BOB> — also allow bob (additive)
 	thread.handleCommand("U_OWNER", "/open <@U_BOB>")
-	if !thread.isAuthorized("U_ALICE") {
+	if !thread.IsAuthorized("U_ALICE") {
 		t.Error("alice should still be authorized")
 	}
-	if !thread.isAuthorized("U_BOB") {
+	if !thread.IsAuthorized("U_BOB") {
 		t.Error("bob should now be authorized")
 	}
 
 	// /lock — reset everything
 	thread.handleCommand("U_OWNER", "/lock")
-	if thread.isAuthorized("U_ALICE") {
+	if thread.IsAuthorized("U_ALICE") {
 		t.Error("alice should not be authorized after /lock")
 	}
-	if thread.isAuthorized("U_BOB") {
+	if thread.IsAuthorized("U_BOB") {
 		t.Error("bob should not be authorized after /lock")
 	}
 }
@@ -134,13 +136,13 @@ func TestOpenMultipleUsersAtOnce(t *testing.T) {
 
 	// /open <@U_ALICE> <@U_BOB> — allow both at once
 	thread.handleCommand("U_OWNER", "/open <@U_ALICE> <@U_BOB>")
-	if !thread.isAuthorized("U_ALICE") {
+	if !thread.IsAuthorized("U_ALICE") {
 		t.Error("alice should be authorized")
 	}
-	if !thread.isAuthorized("U_BOB") {
+	if !thread.IsAuthorized("U_BOB") {
 		t.Error("bob should be authorized")
 	}
-	if thread.isAuthorized("U_CAROL") {
+	if thread.IsAuthorized("U_CAROL") {
 		t.Error("carol should not be authorized")
 	}
 }
@@ -153,22 +155,22 @@ func TestLockSpecificUser(t *testing.T) {
 
 	// Open for everyone first
 	thread.handleCommand("U_OWNER", "/open")
-	if !thread.isAuthorized("U_ALICE") {
+	if !thread.IsAuthorized("U_ALICE") {
 		t.Error("alice should be authorized when open")
 	}
 
 	// /lock <@U_ALICE> — ban alice specifically
 	thread.handleCommand("U_OWNER", "/lock <@U_ALICE>")
-	if thread.isAuthorized("U_ALICE") {
+	if thread.IsAuthorized("U_ALICE") {
 		t.Error("alice should be banned")
 	}
-	if !thread.isAuthorized("U_BOB") {
+	if !thread.IsAuthorized("U_BOB") {
 		t.Error("bob should still be authorized (thread is open)")
 	}
 
 	// Owner is never banned
 	thread.handleCommand("U_OWNER", "/lock <@U_OWNER>")
-	if !thread.isAuthorized("U_OWNER") {
+	if !thread.IsAuthorized("U_OWNER") {
 		t.Error("owner should never be banned")
 	}
 }
@@ -182,13 +184,13 @@ func TestLockMultipleUsers(t *testing.T) {
 
 	// /lock <@U_ALICE> <@U_BOB> — ban both
 	thread.handleCommand("U_OWNER", "/lock <@U_ALICE> <@U_BOB>")
-	if thread.isAuthorized("U_ALICE") {
+	if thread.IsAuthorized("U_ALICE") {
 		t.Error("alice should be banned")
 	}
-	if thread.isAuthorized("U_BOB") {
+	if thread.IsAuthorized("U_BOB") {
 		t.Error("bob should be banned")
 	}
-	if !thread.isAuthorized("U_CAROL") {
+	if !thread.IsAuthorized("U_CAROL") {
 		t.Error("carol should still be authorized")
 	}
 }
@@ -200,13 +202,13 @@ func TestOpenUnbansBannedUser(t *testing.T) {
 	thread := NewThread(mock.client(), "C_TEST", WithOwner("U_OWNER"))
 	thread.handleCommand("U_OWNER", "/open")
 	thread.handleCommand("U_OWNER", "/lock <@U_ALICE>")
-	if thread.isAuthorized("U_ALICE") {
+	if thread.IsAuthorized("U_ALICE") {
 		t.Error("alice should be banned")
 	}
 
 	// /open <@U_ALICE> — unban alice
 	thread.handleCommand("U_OWNER", "/open <@U_ALICE>")
-	if !thread.isAuthorized("U_ALICE") {
+	if !thread.IsAuthorized("U_ALICE") {
 		t.Error("alice should be unbanned after /open")
 	}
 }
@@ -219,13 +221,13 @@ func TestLockRemovesFromAllowed(t *testing.T) {
 
 	// Allow alice specifically
 	thread.handleCommand("U_OWNER", "/open <@U_ALICE>")
-	if !thread.isAuthorized("U_ALICE") {
+	if !thread.IsAuthorized("U_ALICE") {
 		t.Error("alice should be allowed")
 	}
 
 	// Ban alice — should remove from allowed too
 	thread.handleCommand("U_OWNER", "/lock <@U_ALICE>")
-	if thread.isAuthorized("U_ALICE") {
+	if thread.IsAuthorized("U_ALICE") {
 		t.Error("alice should be banned and removed from allowed")
 	}
 }
@@ -390,16 +392,25 @@ func TestParseTitle(t *testing.T) {
 			if th.topic != tt.wantTitle {
 				t.Errorf("title = %q, want %q", th.topic, tt.wantTitle)
 			}
-			if th.openAccess != tt.wantOpen {
-				t.Errorf("openAccess = %v, want %v", th.openAccess, tt.wantOpen)
+			if th.OpenAccess() != tt.wantOpen {
+				t.Errorf("openAccess = %v, want %v", th.OpenAccess(), tt.wantOpen)
+			}
+			st := th.Controller.State()
+			allowedSet := make(map[string]bool)
+			for _, u := range st.AllowedUsers {
+				allowedSet[u] = true
+			}
+			bannedSet := make(map[string]bool)
+			for _, u := range st.BannedUsers {
+				bannedSet[u] = true
 			}
 			for _, uid := range tt.wantAllowed {
-				if !th.allowedUsers[uid] {
+				if !allowedSet[uid] {
 					t.Errorf("allowedUsers missing %s", uid)
 				}
 			}
 			for _, uid := range tt.wantBanned {
-				if !th.bannedUsers[uid] {
+				if !bannedSet[uid] {
 					t.Errorf("bannedUsers missing %s", uid)
 				}
 			}
@@ -431,14 +442,23 @@ func TestParseTitleRoundtrip(t *testing.T) {
 	if th2.topic != "Design API" {
 		t.Errorf("roundtrip title = %q, want %q", th2.topic, "Design API")
 	}
-	if th2.openAccess != false {
+	if th2.OpenAccess() != false {
 		t.Error("roundtrip openAccess should be false")
 	}
-	if !th2.allowedUsers["U_ALICE"] || !th2.allowedUsers["U_BOB"] {
-		t.Errorf("roundtrip allowedUsers = %v, want alice+bob", th2.allowedUsers)
+	st2 := th2.Controller.State()
+	allowedSet := make(map[string]bool)
+	for _, u := range st2.AllowedUsers {
+		allowedSet[u] = true
 	}
-	if !th2.bannedUsers["U_EVIL"] {
-		t.Errorf("roundtrip bannedUsers = %v, want evil", th2.bannedUsers)
+	bannedSet := make(map[string]bool)
+	for _, u := range st2.BannedUsers {
+		bannedSet[u] = true
+	}
+	if !allowedSet["U_ALICE"] || !allowedSet["U_BOB"] {
+		t.Errorf("roundtrip allowedUsers = %v, want alice+bob", st2.AllowedUsers)
+	}
+	if !bannedSet["U_EVIL"] {
+		t.Errorf("roundtrip bannedUsers = %v, want evil", st2.BannedUsers)
 	}
 }
 
@@ -530,8 +550,13 @@ func TestModeSuffixWithBansRoundtrip(t *testing.T) {
 	if th2.topic != "Design API" {
 		t.Errorf("topic = %q, want %q", th2.topic, "Design API")
 	}
-	if !th2.bannedUsers["U_EVIL"] {
-		t.Errorf("bannedUsers = %v, want U_EVIL", th2.bannedUsers)
+	st2 := th2.Controller.State()
+	bannedSet := make(map[string]bool)
+	for _, u := range st2.BannedUsers {
+		bannedSet[u] = true
+	}
+	if !bannedSet["U_EVIL"] {
+		t.Errorf("bannedUsers = %v, want U_EVIL", st2.BannedUsers)
 	}
 }
 
@@ -555,7 +580,7 @@ func TestObserveFormatTitle(t *testing.T) {
 			name: "observe with allowed users",
 			setup: func(th *Thread) {
 				th.handleCommand("U_OWNER", "/open <@U_ALICE>")
-				th.observe = true
+				th.SetObserve(true)
 			},
 			want: ":fox_face:👀🧵 <@U_ALICE> Test Topic",
 		},
@@ -644,17 +669,22 @@ func TestObserveParseTitle(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			th := NewThread(mock.client(), "C_TEST", WithInstanceID("fox_face"))
 			th.parseTitle(tt.text)
-			if th.observe != tt.wantObserve {
-				t.Errorf("observe = %v, want %v", th.observe, tt.wantObserve)
+			if th.Observe() != tt.wantObserve {
+				t.Errorf("observe = %v, want %v", th.Observe(), tt.wantObserve)
 			}
-			if th.openAccess != tt.wantOpen {
-				t.Errorf("openAccess = %v, want %v", th.openAccess, tt.wantOpen)
+			if th.OpenAccess() != tt.wantOpen {
+				t.Errorf("openAccess = %v, want %v", th.OpenAccess(), tt.wantOpen)
 			}
 			if th.topic != tt.wantTopic {
 				t.Errorf("topic = %q, want %q", th.topic, tt.wantTopic)
 			}
+			st := th.Controller.State()
+			allowedSet := make(map[string]bool)
+			for _, u := range st.AllowedUsers {
+				allowedSet[u] = true
+			}
 			for _, uid := range tt.wantAllowed {
-				if !th.allowedUsers[uid] {
+				if !allowedSet[uid] {
 					t.Errorf("allowedUsers missing %s", uid)
 				}
 			}
@@ -682,10 +712,10 @@ func TestObserveRoundtrip(t *testing.T) {
 	if th2.topic != "Watch this" {
 		t.Errorf("roundtrip topic = %q, want %q", th2.topic, "Watch this")
 	}
-	if !th2.observe {
+	if !th2.Observe() {
 		t.Error("roundtrip observe should be true")
 	}
-	if th2.openAccess {
+	if th2.OpenAccess() {
 		t.Error("roundtrip openAccess should be false")
 	}
 }
@@ -700,24 +730,24 @@ func TestObserveIsVisible(t *testing.T) {
 	)
 
 	// Owner is both authorized and visible
-	if !th.isAuthorized("U_OWNER") {
+	if !th.IsAuthorized("U_OWNER") {
 		t.Error("owner should be authorized")
 	}
-	if !th.isVisible("U_OWNER") {
+	if !th.IsVisible("U_OWNER") {
 		t.Error("owner should be visible")
 	}
 
 	// Other user is not authorized but IS visible in observe mode
-	if th.isAuthorized("U_OTHER") {
+	if th.IsAuthorized("U_OTHER") {
 		t.Error("other user should not be authorized in observe mode")
 	}
-	if !th.isVisible("U_OTHER") {
+	if !th.IsVisible("U_OTHER") {
 		t.Error("other user should be visible in observe mode")
 	}
 
 	// Turn off observe
 	th.SetObserve(false)
-	if th.isVisible("U_OTHER") {
+	if th.IsVisible("U_OTHER") {
 		t.Error("other user should not be visible when observe is off")
 	}
 }
@@ -757,10 +787,10 @@ func TestObserveCommand(t *testing.T) {
 	if !strings.Contains(feedback, "on") {
 		t.Errorf("expected 'on' in feedback, got %q", feedback)
 	}
-	if !th.observe {
+	if !th.Observe() {
 		t.Error("observe should be true")
 	}
-	if th.openAccess {
+	if th.OpenAccess() {
 		t.Error("openAccess should be false after /observe")
 	}
 
@@ -772,7 +802,7 @@ func TestObserveCommand(t *testing.T) {
 	if !strings.Contains(feedback, "off") {
 		t.Errorf("expected 'off' in feedback, got %q", feedback)
 	}
-	if th.observe {
+	if th.Observe() {
 		t.Error("observe should be false after second /observe")
 	}
 
@@ -790,13 +820,13 @@ func TestLockDisablesObserve(t *testing.T) {
 
 	th := NewThread(mock.client(), "C_TEST", WithOwner("U_OWNER"))
 	th.handleCommand("U_OWNER", "/observe")
-	if !th.observe {
+	if !th.Observe() {
 		t.Error("observe should be on")
 	}
 
 	// /lock disables observe
 	th.handleCommand("U_OWNER", "/lock")
-	if th.observe {
+	if th.Observe() {
 		t.Error("observe should be off after /lock")
 	}
 }
@@ -807,13 +837,13 @@ func TestOpenDisablesObserve(t *testing.T) {
 
 	th := NewThread(mock.client(), "C_TEST", WithOwner("U_OWNER"))
 	th.handleCommand("U_OWNER", "/observe")
-	if !th.observe {
+	if !th.Observe() {
 		t.Error("observe should be on")
 	}
 
 	// /open disables observe
 	th.handleCommand("U_OWNER", "/open")
-	if th.observe {
+	if th.Observe() {
 		t.Error("observe should be off after /open")
 	}
 }
@@ -1006,17 +1036,17 @@ func TestOpenForSpecificUser(t *testing.T) {
 	thread.PollReplies()
 
 	// Verify Alice is now authorized
-	if !thread.isAuthorized("U_ALICE") {
+	if !thread.IsAuthorized("U_ALICE") {
 		t.Error("U_ALICE should be authorized after /open <@U_ALICE>")
 	}
 
 	// Other users still not authorized
-	if thread.isAuthorized("U_BOB") {
+	if thread.IsAuthorized("U_BOB") {
 		t.Error("U_BOB should not be authorized")
 	}
 
 	// Owner still authorized
-	if !thread.isAuthorized("U_OWNER") {
+	if !thread.IsAuthorized("U_OWNER") {
 		t.Error("owner should always be authorized")
 	}
 
@@ -1045,7 +1075,7 @@ func TestOpenForAllThenLock(t *testing.T) {
 	mock.injectReply("C_TEST", thread.ThreadTS(), "U_OWNER", ":fox_face:: /open")
 	thread.PollReplies()
 
-	if !thread.isAuthorized("U_ANYONE") {
+	if !thread.IsAuthorized("U_ANYONE") {
 		t.Error("anyone should be authorized after /open")
 	}
 
@@ -1053,10 +1083,10 @@ func TestOpenForAllThenLock(t *testing.T) {
 	mock.injectReply("C_TEST", thread.ThreadTS(), "U_OWNER", ":fox_face:: /lock")
 	thread.PollReplies()
 
-	if thread.isAuthorized("U_ANYONE") {
+	if thread.IsAuthorized("U_ANYONE") {
 		t.Error("U_ANYONE should not be authorized after /lock")
 	}
-	if !thread.isAuthorized("U_OWNER") {
+	if !thread.IsAuthorized("U_OWNER") {
 		t.Error("owner should still be authorized after /lock")
 	}
 }
@@ -1076,7 +1106,7 @@ func TestOpenWithDisplayNameSuffix(t *testing.T) {
 	thread.PollReplies()
 
 	// Should still resolve to U_ALICE (not U_ALICE|alice)
-	if !thread.isAuthorized("U_ALICE") {
+	if !thread.IsAuthorized("U_ALICE") {
 		t.Error("U_ALICE should be authorized (display name suffix stripped)")
 	}
 }
@@ -1100,10 +1130,10 @@ func TestLockBanUser(t *testing.T) {
 	thread.PollReplies()
 
 	// Thread is still open (ban doesn't close)
-	if !thread.isAuthorized("U_GOOD") {
+	if !thread.IsAuthorized("U_GOOD") {
 		t.Error("unbanned user should still be authorized")
 	}
-	if thread.isAuthorized("U_BAD") {
+	if thread.IsAuthorized("U_BAD") {
 		t.Error("banned user should not be authorized")
 	}
 }
@@ -1123,7 +1153,7 @@ func TestNonOwnerCannotRunAccessCommands(t *testing.T) {
 	thread.PollReplies()
 
 	// Should still be locked
-	if thread.isAuthorized("U_OTHER") {
+	if thread.IsAuthorized("U_OTHER") {
 		t.Error("non-owner /open should not change access")
 	}
 
@@ -1289,9 +1319,9 @@ func TestParseMention(t *testing.T) {
 		{"U123>", ""},
 	}
 	for _, tt := range tests {
-		got := parseMention(tt.input)
+		got := access.ParseMention(tt.input)
 		if got != tt.want {
-			t.Errorf("parseMention(%q) = %q, want %q", tt.input, got, tt.want)
+			t.Errorf("ParseMention(%q) = %q, want %q", tt.input, got, tt.want)
 		}
 	}
 }
@@ -1370,13 +1400,13 @@ func TestCloseIsAliasForLock(t *testing.T) {
 
 	thread := NewThread(mock.client(), "C_TEST", WithOwner("U_OWNER"))
 	thread.handleCommand("U_OWNER", "/open <@U_ALICE>")
-	if !thread.isAuthorized("U_ALICE") {
+	if !thread.IsAuthorized("U_ALICE") {
 		t.Error("alice should be authorized")
 	}
 
 	// /close should work like /lock
 	thread.handleCommand("U_OWNER", "/close")
-	if thread.isAuthorized("U_ALICE") {
+	if thread.IsAuthorized("U_ALICE") {
 		t.Error("alice should not be authorized after /close")
 	}
 }
@@ -1386,7 +1416,7 @@ func TestThreadOpenAccess(t *testing.T) {
 	defer mock.close()
 
 	thread := NewThread(mock.client(), "C_TEST", WithOpenAccess())
-	if !thread.isAuthorized("U_ANYONE") {
+	if !thread.IsAuthorized("U_ANYONE") {
 		t.Error("anyone should be authorized with open access")
 	}
 }
@@ -1396,7 +1426,7 @@ func TestThreadNoOwner(t *testing.T) {
 	defer mock.close()
 
 	thread := NewThread(mock.client(), "C_TEST")
-	if !thread.isAuthorized("U_ANYONE") {
+	if !thread.IsAuthorized("U_ANYONE") {
 		t.Error("anyone should be authorized with no owner set")
 	}
 }

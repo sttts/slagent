@@ -94,9 +94,7 @@ func (t *Thread) pollOnce() ([]Reply, error) {
 			}
 
 			// Other instances' finalized text — only deliver when agent sees all messages
-			t.mu.Lock()
-			visible := t.openAccess || t.observe || t.ownerID == ""
-			t.mu.Unlock()
+			visible := t.OpenAccess() || t.Observe() || t.OwnerID() == ""
 			if !visible {
 				t.advanceLastTS(msg.Timestamp)
 				continue
@@ -155,7 +153,7 @@ func (t *Thread) pollOnce() ([]Reply, error) {
 				t.advanceLastTS(msg.Timestamp)
 				continue
 			}
-			if msg.User != t.ownerID {
+			if msg.User != t.OwnerID() {
 				t.PostEphemeral(msg.User, t.emoji+" 🚫 Only the session owner can quit.")
 				t.advanceLastTS(msg.Timestamp)
 				continue
@@ -184,7 +182,7 @@ func (t *Thread) pollOnce() ([]Reply, error) {
 
 			// /sandbox — interactive toggle, returns Reply with Sandbox field
 			if strings.HasPrefix(rest, "/sandbox") {
-				if msg.User != t.ownerID {
+				if msg.User != t.OwnerID() {
 					t.PostEphemeral(msg.User, t.emoji+" 🚫 Only the thread owner can change sandbox settings.")
 					t.advanceLastTS(msg.Timestamp)
 					continue
@@ -208,11 +206,11 @@ func (t *Thread) pollOnce() ([]Reply, error) {
 			}
 
 			// Unknown command — forward to Claude
-			if !t.isAuthorized(msg.User) {
+			if !t.IsAuthorized(msg.User) {
 				if t.joined {
 					t.refreshTitle()
 				}
-				if !t.isAuthorized(msg.User) {
+				if !t.IsAuthorized(msg.User) {
 					t.PostEphemeral(msg.User, t.emoji+" 🚫 Not authorized.")
 					t.advanceLastTS(msg.Timestamp)
 					continue
@@ -229,10 +227,10 @@ func (t *Thread) pollOnce() ([]Reply, error) {
 		}
 
 		// Check authorization — re-read title if joined and initially denied
-		authorized := t.isAuthorized(msg.User)
+		authorized := t.IsAuthorized(msg.User)
 		if !authorized && t.joined {
 			t.refreshTitle()
-			authorized = t.isAuthorized(msg.User)
+			authorized = t.IsAuthorized(msg.User)
 		}
 
 		if !authorized {
@@ -244,7 +242,7 @@ func (t *Thread) pollOnce() ([]Reply, error) {
 			}
 
 			// In observe mode, still deliver for passive learning
-			if t.isVisible(msg.User) {
+			if t.IsVisible(msg.User) {
 				user := t.resolveUser(msg.User)
 				replies = append(replies, Reply{
 					User:    user,
