@@ -101,6 +101,25 @@ func (t *Thread) ThinkingEmoji() string {
 	return t.config.thinkingEmoji
 }
 
+// maybeWelcome posts a one-time welcome ephemeral to a non-owner authorized user.
+func (t *Thread) maybeWelcome(userID string) {
+	if userID == t.OwnerID() {
+		return
+	}
+	t.mu.Lock()
+	if t.welcomed == nil {
+		t.welcomed = make(map[string]bool)
+	}
+	if t.welcomed[userID] {
+		t.mu.Unlock()
+		return
+	}
+	t.welcomed[userID] = true
+	t.mu.Unlock()
+
+	t.PostEphemeral(userID, fmt.Sprintf("👋 Welcome! This is your first time interacting with %s. All conversations are logged for transparency and audit. Please use responsibly — and have fun!", t.emoji))
+}
+
 // logSlack writes a Slack API action to the Thread's log writer if configured.
 func (t *Thread) logSlack(action, content string) {
 	if t.config.slackLog == nil {
@@ -131,6 +150,7 @@ type Thread struct {
 
 	// User resolution
 	userCache map[string]string
+	welcomed  map[string]bool // users who received the welcome ephemeral
 
 	mu sync.Mutex
 }

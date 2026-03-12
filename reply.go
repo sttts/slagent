@@ -214,6 +214,7 @@ func (t *Thread) pollOnce() ([]Message, error) {
 					continue
 				}
 			}
+			t.maybeWelcome(msg.User)
 			user := t.resolveUser(msg.User)
 			messages = append(messages, CommandMessage{
 				User:    user,
@@ -252,6 +253,9 @@ func (t *Thread) pollOnce() ([]Message, error) {
 			t.advanceLastTS(msg.Timestamp)
 			continue
 		}
+
+		// Welcome first-time non-owner users
+		t.maybeWelcome(msg.User)
 
 		// Non-command messages are delivered to all instances.
 		// Keep original text so Claude sees the :shortcode:: prefix
