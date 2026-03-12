@@ -10,7 +10,7 @@ slaude join https://<workspace>.slack.com/archives/D1KFZ7GJ0/p1773303415258849
   <img src="contrib/screencast.gif" width="70%" alt="slaude screencast">
 </p>
 
-# slagent
+# slagent (go library) & slaude (CLI)
 
 > [!CAUTION]
 > **Experimental** — slaude exposes your Claude Code session to Slack. Likely insecure. Use at your own risk.
