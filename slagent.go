@@ -22,17 +22,41 @@ const (
 	ToolError   = "error"
 )
 
-// Reply is a message from a thread participant.
-type Reply struct {
-	User    string // Display name
-	UserID  string // Slack user ID
-	Text    string
-	Command string // If set, a /command to forward (not team feedback)
-	Stop    bool   // If set, interrupt the current Claude turn
-	Quit    bool   // If set, terminate the session (owner only)
-	Sandbox *bool  // If non-nil, request sandbox toggle (true=enable, false=disable)
-	Observe bool   // If set, message is observe-only (user not authorized to get responses)
+// Message is a typed event from a thread participant.
+type Message interface{ message() }
+
+// TextMessage is a regular text message from a user.
+type TextMessage struct {
+	User, UserID, Text string
+	Observe            bool // observe-only: user not authorized to get responses
 }
+
+// CommandMessage is a /command to forward to Claude.
+type CommandMessage struct {
+	User, UserID, Command string
+}
+
+// StopMessage requests interrupting the current turn.
+type StopMessage struct {
+	User, UserID string
+}
+
+// QuitMessage requests terminating the session (owner only).
+type QuitMessage struct {
+	User, UserID string
+}
+
+// SandboxToggle requests a sandbox enable/disable (owner only).
+type SandboxToggle struct {
+	User, UserID string
+	Enable       *bool // nil if cancelled/timed out
+}
+
+func (TextMessage) message()    {}
+func (CommandMessage) message() {}
+func (StopMessage) message()    {}
+func (QuitMessage) message()    {}
+func (SandboxToggle) message()  {}
 
 // ThreadOption configures a Thread.
 type ThreadOption func(*threadConfig)

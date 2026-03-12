@@ -11,6 +11,18 @@ import (
 	"github.com/sttts/slagent/access"
 )
 
+// isStop returns true if msg is a StopMessage.
+func isStop(msg Message) bool {
+	_, ok := msg.(StopMessage)
+	return ok
+}
+
+// isQuit returns true if msg is a QuitMessage.
+func isQuit(msg Message) bool {
+	_, ok := msg.(QuitMessage)
+	return ok
+}
+
 func TestClassifyBlock(t *testing.T) {
 	tests := []struct {
 		blockID    string
@@ -1056,8 +1068,8 @@ func TestOpenForSpecificUser(t *testing.T) {
 	if len(replies) != 1 {
 		t.Fatalf("Alice's message should produce 1 reply, got %d", len(replies))
 	}
-	if !strings.Contains(replies[0].Text, "hello") {
-		t.Errorf("reply text = %q, want 'hello'", replies[0].Text)
+	if !strings.Contains(replies[0].(TextMessage).Text, "hello") {
+		t.Errorf("reply text = %q, want 'hello'", replies[0].(TextMessage).Text)
 	}
 }
 
@@ -1360,8 +1372,8 @@ func TestNonOwnerCannotSendCommands(t *testing.T) {
 	if len(replies) != 1 {
 		t.Fatalf("replies = %d, want 1", len(replies))
 	}
-	if replies[0].Command != "/compact" {
-		t.Errorf("replies[0].Command = %q, want %q", replies[0].Command, "/compact")
+	if replies[0].(CommandMessage).Command != "/compact" {
+		t.Errorf("replies[0].(CommandMessage).Command = %q, want %q", replies[0].(CommandMessage).Command, "/compact")
 	}
 }
 
@@ -1389,8 +1401,8 @@ func TestNonOwnerCommandAfterOpen(t *testing.T) {
 	if len(replies) != 1 {
 		t.Fatalf("replies = %d, want 1 (authorized user's command should be forwarded)", len(replies))
 	}
-	if replies[0].Command != "/compact" {
-		t.Errorf("replies[0].Command = %q, want %q", replies[0].Command, "/compact")
+	if replies[0].(CommandMessage).Command != "/compact" {
+		t.Errorf("replies[0].(CommandMessage).Command = %q, want %q", replies[0].(CommandMessage).Command, "/compact")
 	}
 }
 
@@ -1576,8 +1588,8 @@ func TestPollRepliesFiltering(t *testing.T) {
 	if len(replies) != 1 {
 		t.Fatalf("replies = %d, want 1", len(replies))
 	}
-	if replies[0].Text != "owner message" {
-		t.Errorf("reply text = %q, want %q", replies[0].Text, "owner message")
+	if replies[0].(TextMessage).Text != "owner message" {
+		t.Errorf("reply text = %q, want %q", replies[0].(TextMessage).Text, "owner message")
 	}
 }
 
@@ -1607,8 +1619,8 @@ func TestPollRepliesOpenClose(t *testing.T) {
 	if len(replies) != 1 {
 		t.Fatalf("replies = %d, want 1", len(replies))
 	}
-	if replies[0].Text != "hello!" {
-		t.Errorf("reply text = %q, want %q", replies[0].Text, "hello!")
+	if replies[0].(TextMessage).Text != "hello!" {
+		t.Errorf("reply text = %q, want %q", replies[0].(TextMessage).Text, "hello!")
 	}
 }
 
@@ -1635,8 +1647,8 @@ func TestPollRepliesSkipsOwnMessages(t *testing.T) {
 	if len(replies) != 1 {
 		t.Fatalf("replies = %d, want 1", len(replies))
 	}
-	if replies[0].Text != "human reply" {
-		t.Errorf("reply text = %q, want %q", replies[0].Text, "human reply")
+	if replies[0].(TextMessage).Text != "human reply" {
+		t.Errorf("reply text = %q, want %q", replies[0].(TextMessage).Text, "human reply")
 	}
 }
 
@@ -1683,10 +1695,10 @@ func TestPollRepliesDeliversFinalizedFromOtherInstance(t *testing.T) {
 	if len(replies) != 1 {
 		t.Fatalf("replies = %d, want 1 (other instance finalized should be delivered)", len(replies))
 	}
-	if replies[0].Text != "other slaude response" {
-		t.Errorf("reply text = %q, want %q", replies[0].Text, "other slaude response")
+	if replies[0].(TextMessage).Text != "other slaude response" {
+		t.Errorf("reply text = %q, want %q", replies[0].(TextMessage).Text, "other slaude response")
 	}
-	if !replies[0].Observe {
+	if !replies[0].(TextMessage).Observe {
 		t.Error("other-instance messages should be marked as observe-only")
 	}
 }
@@ -1739,8 +1751,8 @@ func TestPollRepliesSkipsActivityFromAllInstances(t *testing.T) {
 	if len(replies) != 1 {
 		t.Fatalf("replies = %d, want 1 (activity should be skipped)", len(replies))
 	}
-	if replies[0].Text != "human reply" {
-		t.Errorf("reply text = %q, want %q", replies[0].Text, "human reply")
+	if replies[0].(TextMessage).Text != "human reply" {
+		t.Errorf("reply text = %q, want %q", replies[0].(TextMessage).Text, "human reply")
 	}
 }
 
@@ -1774,8 +1786,8 @@ func TestPollRepliesStreamingThenFinalizedSkipped(t *testing.T) {
 	if len(replies) != 1 {
 		t.Fatalf("second poll: replies = %d, want 1 (other instance finalized should be delivered)", len(replies))
 	}
-	if replies[0].Text != "partial" {
-		t.Errorf("reply text = %q, want %q", replies[0].Text, "partial")
+	if replies[0].(TextMessage).Text != "partial" {
+		t.Errorf("reply text = %q, want %q", replies[0].(TextMessage).Text, "partial")
 	}
 }
 
@@ -1826,11 +1838,11 @@ func TestMultiInstanceVisibility(t *testing.T) {
 	if len(replies) != 2 {
 		t.Fatalf("replies = %d, want 2 (other finalized + human)", len(replies))
 	}
-	if replies[0].Text != ":rhinoceros: I finished the task" {
-		t.Errorf("reply[0] text = %q, want other instance finalized", replies[0].Text)
+	if replies[0].(TextMessage).Text != ":rhinoceros: I finished the task" {
+		t.Errorf("reply[0] text = %q, want other instance finalized", replies[0].(TextMessage).Text)
 	}
-	if replies[1].Text != "looks good" {
-		t.Errorf("reply[1] text = %q, want human message", replies[1].Text)
+	if replies[1].(TextMessage).Text != "looks good" {
+		t.Errorf("reply[1] text = %q, want human message", replies[1].(TextMessage).Text)
 	}
 }
 
@@ -1862,14 +1874,14 @@ func TestMultiInstanceAddressedToOther(t *testing.T) {
 	if len(replies) != 3 {
 		t.Fatalf("replies = %d, want 3", len(replies))
 	}
-	if replies[0].Text != ":rhinoceros:: do this task" {
-		t.Errorf("reply[0] = %q, want addressed-to-other delivered with prefix", replies[0].Text)
+	if replies[0].(TextMessage).Text != ":rhinoceros:: do this task" {
+		t.Errorf("reply[0] = %q, want addressed-to-other delivered with prefix", replies[0].(TextMessage).Text)
 	}
-	if replies[1].Text != ":dog:: do that task" {
-		t.Errorf("reply[1] = %q, want addressed-to-self delivered with prefix", replies[1].Text)
+	if replies[1].(TextMessage).Text != ":dog:: do that task" {
+		t.Errorf("reply[1] = %q, want addressed-to-self delivered with prefix", replies[1].(TextMessage).Text)
 	}
-	if replies[2].Text != "general update" {
-		t.Errorf("reply[2] = %q, want untargeted message", replies[2].Text)
+	if replies[2].(TextMessage).Text != "general update" {
+		t.Errorf("reply[2] = %q, want untargeted message", replies[2].(TextMessage).Text)
 	}
 }
 
@@ -1896,8 +1908,8 @@ func TestMultiInstanceCommandsAreExclusive(t *testing.T) {
 	if len(replies) != 1 {
 		t.Fatalf("replies = %d, want 1 (only dog's command)", len(replies))
 	}
-	if replies[0].Command != "/status" {
-		t.Errorf("reply command = %q, want /status", replies[0].Command)
+	if replies[0].(CommandMessage).Command != "/status" {
+		t.Errorf("reply command = %q, want /status", replies[0].(CommandMessage).Command)
 	}
 }
 
@@ -1925,14 +1937,14 @@ func TestMultiInstanceOtherFinalizedThenHuman(t *testing.T) {
 	if len(replies) != 3 {
 		t.Fatalf("replies = %d, want 3", len(replies))
 	}
-	if replies[0].Text != ":rhinoceros: done with refactoring" {
-		t.Errorf("reply[0] = %q", replies[0].Text)
+	if replies[0].(TextMessage).Text != ":rhinoceros: done with refactoring" {
+		t.Errorf("reply[0] = %q", replies[0].(TextMessage).Text)
 	}
-	if replies[1].Text != "great work both of you" {
-		t.Errorf("reply[1] = %q", replies[1].Text)
+	if replies[1].(TextMessage).Text != "great work both of you" {
+		t.Errorf("reply[1] = %q", replies[1].(TextMessage).Text)
 	}
-	if replies[2].Text != ":rhinoceros: thanks!" {
-		t.Errorf("reply[2] = %q", replies[2].Text)
+	if replies[2].(TextMessage).Text != ":rhinoceros: thanks!" {
+		t.Errorf("reply[2] = %q", replies[2].(TextMessage).Text)
 	}
 }
 
@@ -1955,11 +1967,8 @@ func TestStopBare(t *testing.T) {
 	if len(replies) != 1 {
 		t.Fatalf("replies = %d, want 1", len(replies))
 	}
-	if !replies[0].Stop {
+	if !isStop(replies[0]) {
 		t.Error("reply.Stop = false, want true")
-	}
-	if replies[0].Text != "" {
-		t.Errorf("reply.Text = %q, want empty", replies[0].Text)
 	}
 }
 
@@ -1979,7 +1988,7 @@ func TestStopCaseInsensitive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PollReplies: %v", err)
 	}
-	if len(replies) != 1 || !replies[0].Stop {
+	if len(replies) != 1 || !isStop(replies[0]) {
 		t.Fatalf("expected Stop reply for 'STOP'")
 	}
 }
@@ -2007,7 +2016,7 @@ func TestStopTargeted(t *testing.T) {
 	if len(replies) != 1 {
 		t.Fatalf("replies = %d, want 1 (only targeted stop)", len(replies))
 	}
-	if !replies[0].Stop {
+	if !isStop(replies[0]) {
 		t.Error("reply.Stop = false, want true")
 	}
 }
@@ -2028,7 +2037,7 @@ func TestStopWithSpaces(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PollReplies: %v", err)
 	}
-	if len(replies) != 1 || !replies[0].Stop {
+	if len(replies) != 1 || !isStop(replies[0]) {
 		t.Fatalf("expected Stop reply for '  stop  '")
 	}
 }
@@ -2053,7 +2062,7 @@ func TestQuitByOwner(t *testing.T) {
 	if len(replies) != 1 {
 		t.Fatalf("replies = %d, want 1", len(replies))
 	}
-	if !replies[0].Quit {
+	if !isQuit(replies[0]) {
 		t.Error("reply.Quit = false, want true")
 	}
 }
@@ -2105,7 +2114,7 @@ func TestQuitTargeted(t *testing.T) {
 	if len(replies) != 1 {
 		t.Fatalf("replies = %d, want 1", len(replies))
 	}
-	if !replies[0].Quit {
+	if !isQuit(replies[0]) {
 		t.Error("reply.Quit = false, want true")
 	}
 }
@@ -2170,7 +2179,7 @@ func TestRepliesBlockingReturnsOnReply(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Replies: %v", err)
 	}
-	if len(replies) != 1 || replies[0].Text != "delayed reply" {
+	if len(replies) != 1 || replies[0].(TextMessage).Text != "delayed reply" {
 		t.Errorf("unexpected replies: %v", replies)
 	}
 }
@@ -2271,14 +2280,14 @@ func TestPollRepliesEmojiPrefixTargeting(t *testing.T) {
 	}
 
 	// All keep original text (prefix included so Claude sees targeting)
-	if replies[0].Text != ":fox_face:: do this" {
-		t.Errorf("replies[0].Text = %q, want %q", replies[0].Text, ":fox_face:: do this")
+	if replies[0].(TextMessage).Text != ":fox_face:: do this" {
+		t.Errorf("replies[0].(TextMessage).Text = %q, want %q", replies[0].(TextMessage).Text, ":fox_face:: do this")
 	}
-	if replies[1].Text != ":dog:: do that" {
-		t.Errorf("replies[1].Text = %q, want %q", replies[1].Text, ":dog:: do that")
+	if replies[1].(TextMessage).Text != ":dog:: do that" {
+		t.Errorf("replies[1].(TextMessage).Text = %q, want %q", replies[1].(TextMessage).Text, ":dog:: do that")
 	}
-	if replies[2].Text != "general message" {
-		t.Errorf("replies[2].Text = %q, want %q", replies[2].Text, "general message")
+	if replies[2].(TextMessage).Text != "general message" {
+		t.Errorf("replies[2].(TextMessage).Text = %q, want %q", replies[2].(TextMessage).Text, "general message")
 	}
 }
 
@@ -2306,8 +2315,8 @@ func TestPollRepliesCommandOnlyForTargetInstance(t *testing.T) {
 	if len(replies) != 1 {
 		t.Fatalf("replies = %d, want 1", len(replies))
 	}
-	if replies[0].Command != "/compact" {
-		t.Errorf("replies[0].Command = %q, want %q", replies[0].Command, "/compact")
+	if replies[0].(CommandMessage).Command != "/compact" {
+		t.Errorf("replies[0].(CommandMessage).Command = %q, want %q", replies[0].(CommandMessage).Command, "/compact")
 	}
 }
 
@@ -2332,11 +2341,8 @@ func TestPollRepliesEmojiPrefixCommand(t *testing.T) {
 	if len(replies) != 1 {
 		t.Fatalf("replies = %d, want 1", len(replies))
 	}
-	if replies[0].Command != "/compact" {
-		t.Errorf("replies[0].Command = %q, want %q", replies[0].Command, "/compact")
-	}
-	if replies[0].Text != "" {
-		t.Errorf("replies[0].Text = %q, want empty", replies[0].Text)
+	if replies[0].(CommandMessage).Command != "/compact" {
+		t.Errorf("replies[0].(CommandMessage).Command = %q, want %q", replies[0].(CommandMessage).Command, "/compact")
 	}
 }
 
@@ -2488,10 +2494,10 @@ func TestOtherInstanceVisibleInObserveMode(t *testing.T) {
 	if len(replies) != 1 {
 		t.Fatalf("got %d replies, want 1 (other-instance messages should be visible in observe mode)", len(replies))
 	}
-	if replies[0].Text != "hello from dog" {
-		t.Errorf("reply text = %q, want %q", replies[0].Text, "hello from dog")
+	if replies[0].(TextMessage).Text != "hello from dog" {
+		t.Errorf("reply text = %q, want %q", replies[0].(TextMessage).Text, "hello from dog")
 	}
-	if !replies[0].Observe {
+	if !replies[0].(TextMessage).Observe {
 		t.Error("other-instance messages should be marked as observe-only")
 	}
 }

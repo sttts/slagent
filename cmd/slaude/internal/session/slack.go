@@ -275,46 +275,43 @@ func (s *Session) handleSandboxToggle(enable bool) {
 	s.ui.Info(fmt.Sprintf("🔒 Sandbox %s — session resumed", status))
 }
 
-// feedbackLoop polls Slack for replies and feeds them to Claude until the session ends.
+// feedbackLoop polls Slack for messages and feeds them to Claude until the session ends.
 func (s *Session) feedbackLoop(ctx context.Context) {
 	for {
 		s.ui.Info("⏳ Waiting for team feedback from Slack...")
-		replies, ok := s.waitForReplies(ctx)
+		messages, ok := s.waitForReplies(ctx)
 		if !ok {
 			return
 		}
 
-		// Handle sandbox toggle requests (stop + restart with new settings)
-		for _, r := range replies {
-			if r.Sandbox != nil {
-				s.handleSandboxToggle(*r.Sandbox)
-				// After restart, the feedback loop continues with the new session
-			}
-		}
-
-		// Separate commands from regular feedback
-		var commands []slagent.Reply
-		var feedback []slagent.Reply
-		for _, r := range replies {
-			if r.Command != "" {
-				commands = append(commands, r)
-			} else if r.Sandbox == nil {
-				feedback = append(feedback, r)
+		// Classify messages by type
+		var commands []slagent.CommandMessage
+		var feedback []slagent.TextMessage
+		for _, msg := range messages {
+			switch m := msg.(type) {
+			case slagent.SandboxToggle:
+				if m.Enable != nil {
+					s.handleSandboxToggle(*m.Enable)
+				}
+			case slagent.CommandMessage:
+				commands = append(commands, m)
+			case slagent.TextMessage:
+				feedback = append(feedback, m)
 			}
 		}
 
 		// Show in terminal
-		for _, r := range commands {
-			s.ui.SlackMessage(r.User, r.Command)
+		for _, c := range commands {
+			s.ui.SlackMessage(c.User, c.Command)
 		}
-		for _, r := range feedback {
-			s.ui.SlackMessage(r.User, r.Text)
+		for _, f := range feedback {
+			s.ui.SlackMessage(f.User, f.Text)
 		}
 
 		// Send commands directly to Claude (each as its own turn)
-		for _, r := range commands {
+		for _, c := range commands {
 			turn := s.startThinking()
-			if err := s.proc.Send(r.Command); err != nil {
+			if err := s.proc.Send(c.Command); err != nil {
 				s.ui.Error(fmt.Sprintf("send command to claude: %v", err))
 				return
 			}
@@ -334,11 +331,11 @@ func (s *Session) feedbackLoop(ctx context.Context) {
 
 			var sb strings.Builder
 			sb.WriteString("[Team feedback from Slack thread]\n")
-			for _, r := range feedback {
-				if r.Observe {
-					fmt.Fprintf(&sb, "@%s [observe-only]: %s\n", r.User, r.Text)
+			for _, f := range feedback {
+				if f.Observe {
+					fmt.Fprintf(&sb, "@%s [observe-only]: %s\n", f.User, f.Text)
 				} else {
-					fmt.Fprintf(&sb, "@%s: %s\n", r.User, r.Text)
+					fmt.Fprintf(&sb, "@%s: %s\n", f.User, f.Text)
 				}
 			}
 
@@ -357,13 +354,13 @@ func (s *Session) feedbackLoop(ctx context.Context) {
 // hasFeedbackForUs returns true if any feedback message is either unaddressed
 // or addressed to our instance. Messages addressed to other instances (which
 // Claude will silently ignore) don't count.
-func (s *Session) hasFeedbackForUs(feedback []slagent.Reply) bool {
+func (s *Session) hasFeedbackForUs(feedback []slagent.TextMessage) bool {
 	if s.thread == nil {
 		return true
 	}
 	ourID := s.thread.InstanceID()
-	for _, r := range feedback {
-		targetID, _, targeted := slagent.ParseMessage(r.Text)
+	for _, f := range feedback {
+		targetID, _, targeted := slagent.ParseMessage(f.Text)
 		if !targeted || targetID == ourID {
 			return true
 		}
@@ -371,8 +368,8 @@ func (s *Session) hasFeedbackForUs(feedback []slagent.Reply) bool {
 	return false
 }
 
-// waitForReplies blocks until Slack replies are available or context is cancelled.
-func (s *Session) waitForReplies(ctx context.Context) ([]slagent.Reply, bool) {
+// waitForReplies blocks until Slack messages are available or context is cancelled.
+func (s *Session) waitForReplies(ctx context.Context) ([]slagent.Message, bool) {
 	select {
 	case <-ctx.Done():
 		return nil, false
@@ -385,7 +382,7 @@ func (s *Session) waitForReplies(ctx context.Context) ([]slagent.Reply, bool) {
 	}
 }
 
-// pollSlack continuously polls for new Slack thread replies.
+// pollSlack continuously polls for new Slack thread messages.
 func (s *Session) pollSlack(ctx context.Context) {
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
@@ -395,30 +392,30 @@ func (s *Session) pollSlack(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			replies, err := s.thread.PollReplies()
+			messages, err := s.thread.PollReplies()
 			if err != nil {
 				continue
 			}
-			if len(replies) == 0 {
+			if len(messages) == 0 {
 				continue
 			}
 
-			// Separate stop/quit signals from regular replies
+			// Separate stop/quit signals from regular messages
 			hasStop := false
-			var regular []slagent.Reply
-			for _, r := range replies {
-				if r.Quit {
-					s.ui.Info("👋 Quit requested by " + r.User)
+			var regular []slagent.Message
+			for _, msg := range messages {
+				switch m := msg.(type) {
+				case slagent.QuitMessage:
+					s.ui.Info("👋 Quit requested by " + m.User)
 					if s.thread != nil {
-						s.thread.Post("👋 Session ended by " + r.User)
+						s.thread.Post("👋 Session ended by " + m.User)
 					}
 					s.cancel()
 					return
-				}
-				if r.Stop {
+				case slagent.StopMessage:
 					hasStop = true
-				} else {
-					regular = append(regular, r)
+				default:
+					regular = append(regular, msg)
 				}
 			}
 

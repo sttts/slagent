@@ -62,7 +62,7 @@ type Session struct {
 
 	// Slack reply queue: replies collected between turns
 	replyMu     sync.Mutex
-	replies     []slagent.Reply
+	replies     []slagent.Message
 	replyNotify chan struct{} // signaled when new replies arrive
 	stopNotify  chan struct{} // signaled when a "stop" message arrives
 

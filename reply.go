@@ -9,9 +9,9 @@ import (
 	slackapi "github.com/slack-go/slack"
 )
 
-// Replies returns new replies since the last call, filtering by permissions.
-// It blocks until ctx is cancelled or replies arrive, polling at the configured interval.
-func (t *Thread) Replies(ctx context.Context) ([]Reply, error) {
+// Replies returns new messages since the last call, filtering by permissions.
+// It blocks until ctx is cancelled or messages arrive, polling at the configured interval.
+func (t *Thread) Replies(ctx context.Context) ([]Message, error) {
 	timer := time.NewTimer(0) // fire immediately on first poll
 	defer timer.Stop()
 
@@ -22,19 +22,19 @@ func (t *Thread) Replies(ctx context.Context) ([]Reply, error) {
 		case <-timer.C:
 		}
 
-		replies, err := t.pollOnce()
+		msgs, err := t.pollOnce()
 		if err != nil {
 			return nil, err
 		}
-		if len(replies) > 0 {
-			return replies, nil
+		if len(msgs) > 0 {
+			return msgs, nil
 		}
 		timer.Reset(t.config.pollInterval)
 	}
 }
 
-// PollReplies fetches new replies without blocking (single poll).
-func (t *Thread) PollReplies() ([]Reply, error) {
+// PollReplies fetches new messages without blocking (single poll).
+func (t *Thread) PollReplies() ([]Message, error) {
 	return t.pollOnce()
 }
 
@@ -47,9 +47,9 @@ func (t *Thread) advanceLastTS(ts string) {
 	t.mu.Unlock()
 }
 
-// pollOnce fetches new replies from the thread, filtering by permissions and own messages.
+// pollOnce fetches new messages from the thread, filtering by permissions and own messages.
 // Messages posted by slagent are identified by block_id and skipped.
-func (t *Thread) pollOnce() ([]Reply, error) {
+func (t *Thread) pollOnce() ([]Message, error) {
 	t.mu.Lock()
 	threadTS := t.threadTS
 	oldest := t.lastTS
@@ -64,13 +64,13 @@ func (t *Thread) pollOnce() ([]Reply, error) {
 		Timestamp: threadTS,
 		Oldest:    oldest,
 	}
-	msgs, _, _, err := t.client.GetConversationReplies(params)
+	slackMsgs, _, _, err := t.client.GetConversationReplies(params)
 	if err != nil {
 		return nil, fmt.Errorf("get replies: %w", err)
 	}
 
-	var replies []Reply
-	for _, msg := range msgs {
+	var messages []Message
+	for _, msg := range slackMsgs {
 		// Skip parent and already-seen messages
 		if msg.Timestamp == threadTS || msg.Timestamp <= oldest {
 			continue
@@ -102,7 +102,7 @@ func (t *Thread) pollOnce() ([]Reply, error) {
 
 			// Deliver as observe-only so Claude reads but doesn't respond
 			user := t.resolveUser(msg.User)
-			replies = append(replies, Reply{
+			messages = append(messages, TextMessage{
 				User:    user,
 				UserID:  msg.User,
 				Text:    msg.Text,
@@ -142,7 +142,7 @@ func (t *Thread) pollOnce() ([]Reply, error) {
 				continue
 			}
 			user := t.resolveUser(msg.User)
-			replies = append(replies, Reply{User: user, UserID: msg.User, Stop: true})
+			messages = append(messages, StopMessage{User: user, UserID: msg.User})
 			t.advanceLastTS(msg.Timestamp)
 			continue
 		}
@@ -159,7 +159,7 @@ func (t *Thread) pollOnce() ([]Reply, error) {
 				continue
 			}
 			user := t.resolveUser(msg.User)
-			replies = append(replies, Reply{User: user, UserID: msg.User, Quit: true})
+			messages = append(messages, QuitMessage{User: user, UserID: msg.User})
 			t.advanceLastTS(msg.Timestamp)
 			continue
 		}
@@ -180,7 +180,7 @@ func (t *Thread) pollOnce() ([]Reply, error) {
 				continue
 			}
 
-			// /sandbox — interactive toggle, returns Reply with Sandbox field
+			// /sandbox — interactive toggle, returns SandboxToggle
 			if strings.HasPrefix(rest, "/sandbox") {
 				if msg.User != t.OwnerID() {
 					t.PostEphemeral(msg.User, t.emoji+" 🚫 Only the thread owner can change sandbox settings.")
@@ -189,7 +189,7 @@ func (t *Thread) pollOnce() ([]Reply, error) {
 				}
 				if result, ok := t.handleSandboxCommand(); ok {
 					user := t.resolveUser(msg.User)
-					replies = append(replies, Reply{User: user, UserID: msg.User, Sandbox: result})
+					messages = append(messages, SandboxToggle{User: user, UserID: msg.User, Enable: result})
 				}
 				t.advanceLastTS(msg.Timestamp)
 				continue
@@ -217,7 +217,7 @@ func (t *Thread) pollOnce() ([]Reply, error) {
 				}
 			}
 			user := t.resolveUser(msg.User)
-			replies = append(replies, Reply{
+			messages = append(messages, CommandMessage{
 				User:    user,
 				UserID:  msg.User,
 				Command: rest,
@@ -244,7 +244,7 @@ func (t *Thread) pollOnce() ([]Reply, error) {
 			// In observe mode, still deliver for passive learning
 			if t.IsVisible(msg.User) {
 				user := t.resolveUser(msg.User)
-				replies = append(replies, Reply{
+				messages = append(messages, TextMessage{
 					User:    user,
 					UserID:  msg.User,
 					Text:    msg.Text,
@@ -259,7 +259,7 @@ func (t *Thread) pollOnce() ([]Reply, error) {
 		// Keep original text so Claude sees the :shortcode:: prefix
 		// and knows who the message is meant for.
 		user := t.resolveUser(msg.User)
-		replies = append(replies, Reply{
+		messages = append(messages, TextMessage{
 			User:   user,
 			UserID: msg.User,
 			Text:   msg.Text,
@@ -267,5 +267,5 @@ func (t *Thread) pollOnce() ([]Reply, error) {
 		t.advanceLastTS(msg.Timestamp)
 	}
 
-	return replies, nil
+	return messages, nil
 }
