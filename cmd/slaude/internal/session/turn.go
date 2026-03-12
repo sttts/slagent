@@ -194,42 +194,7 @@ func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 			}
 
 		case "tool_use":
-			tt.Update(evt.ToolName, toolDetail(evt.ToolName, evt.ToolInput))
-			s.ui.ToolActivity(formatTool(evt.ToolName, evt.ToolInput))
-
-			if tt.turn != nil {
-				if p := interactivePrompt(evt.ToolName, evt.ToolInput, s.thread.OwnerID(), s.thread.Emoji()); p != nil {
-					s.thread.PostPrompt(p.text, p.reactions)
-					tt.Clear()
-				} else if evt.ToolName == "EnterPlanMode" || evt.ToolName == "ExitPlanMode" {
-					tt.SplitTurn()
-					s.approvePlanModeTransition(evt.ToolName == "EnterPlanMode", evt.ToolInput)
-				} else if evt.ToolName == "AskUserQuestion" {
-					if hasQuestionsFormat(evt.ToolInput) {
-						tt.SplitTurn()
-					} else {
-						var prefix string
-						if ownerID := s.thread.OwnerID(); ownerID != "" {
-							prefix = fmt.Sprintf("<@%s>: ", ownerID)
-						}
-						tt.turn.MarkQuestion(prefix)
-					}
-					tt.Clear()
-				} else {
-					tt.turn.Tool(tt.id, evt.ToolName, slagent.ToolRunning, tt.detail)
-				}
-			}
-
-			if evt.ToolName == "TodoWrite" {
-				s.updateTodos(evt.ToolInput)
-			}
-			// Post code blocks for Edit/Write. ExitPlanMode plan is posted
-			// after approval in approvePlanModeTransition.
-			if s.thread != nil && evt.ToolName != "ExitPlanMode" {
-				if block := toolCodeBlock(evt.ToolName, evt.ToolInput); block != "" {
-					s.thread.Post(s.thread.Emoji() + " " + block)
-				}
-			}
+			s.handleToolUse(tt, evt)
 
 		case claude.TypeResult:
 			tt.Finish()
@@ -253,6 +218,48 @@ func (s *Session) readTurn(earlyTurn ...slagent.Turn) error {
 		}
 
 		go readNext()
+	}
+}
+
+// handleToolUse processes a tool_use event from Claude.
+func (s *Session) handleToolUse(tt *toolTracker, evt *claude.Event) {
+	tt.Update(evt.ToolName, toolDetail(evt.ToolName, evt.ToolInput))
+	s.ui.ToolActivity(formatTool(evt.ToolName, evt.ToolInput))
+
+	// Slack turn interaction (prompts, plan mode, questions)
+	if tt.turn != nil {
+		if p := interactivePrompt(evt.ToolName, evt.ToolInput, s.thread.OwnerID(), s.thread.Emoji()); p != nil {
+			s.thread.PostPrompt(p.text, p.reactions)
+			tt.Clear()
+		} else if evt.ToolName == "EnterPlanMode" || evt.ToolName == "ExitPlanMode" {
+			tt.SplitTurn()
+			s.approvePlanModeTransition(evt.ToolName == "EnterPlanMode", evt.ToolInput)
+		} else if evt.ToolName == "AskUserQuestion" {
+			if hasQuestionsFormat(evt.ToolInput) {
+				tt.SplitTurn()
+			} else {
+				var prefix string
+				if ownerID := s.thread.OwnerID(); ownerID != "" {
+					prefix = fmt.Sprintf("<@%s>: ", ownerID)
+				}
+				tt.turn.MarkQuestion(prefix)
+			}
+			tt.Clear()
+		} else {
+			tt.turn.Tool(tt.id, evt.ToolName, slagent.ToolRunning, tt.detail)
+		}
+	}
+
+	if evt.ToolName == "TodoWrite" {
+		s.updateTodos(evt.ToolInput)
+	}
+
+	// Post code blocks for Edit/Write. ExitPlanMode plan is posted
+	// after approval in approvePlanModeTransition.
+	if s.thread != nil && evt.ToolName != "ExitPlanMode" {
+		if block := toolCodeBlock(evt.ToolName, evt.ToolInput); block != "" {
+			s.thread.Post(s.thread.Emoji() + " " + block)
+		}
 	}
 }
 
