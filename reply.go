@@ -180,17 +180,15 @@ func (t *Thread) pollOnce() ([]Message, error) {
 				continue
 			}
 
-			// /sandbox — interactive toggle, returns SandboxToggle
+			// /sandbox — signal sandbox toggle request for Session to handle
 			if strings.HasPrefix(rest, "/sandbox") {
 				if msg.User != t.OwnerID() {
 					t.PostEphemeral(msg.User, t.emoji+" 🚫 Only the thread owner can change sandbox settings.")
 					t.advanceLastTS(msg.Timestamp)
 					continue
 				}
-				if result, ok := t.handleSandboxCommand(); ok {
-					user := t.resolveUser(msg.User)
-					messages = append(messages, SandboxToggle{User: user, UserID: msg.User, Enable: result})
-				}
+				user := t.resolveUser(msg.User)
+				messages = append(messages, SandboxToggle{User: user, UserID: msg.User})
 				t.advanceLastTS(msg.Timestamp)
 				continue
 			}

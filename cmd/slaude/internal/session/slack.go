@@ -275,6 +275,47 @@ func (s *Session) handleSandboxToggle(enable bool) {
 	s.ui.Info(fmt.Sprintf("🔒 Sandbox %s — session resumed", status))
 }
 
+// handleSandboxPrompt posts an interactive sandbox toggle prompt and polls for the owner's reaction.
+// Returns the selected value (true=enable, false=disable) or nil if cancelled/timed out.
+func (s *Session) handleSandboxPrompt() *bool {
+	if s.thread == nil {
+		return nil
+	}
+
+	emoji := s.thread.Emoji()
+	text := fmt.Sprintf("%s 🔒 *Sandbox*\n> 1️⃣  *Enable* — OS-level filesystem and network isolation\n> 2️⃣  *Disable* — No sandbox restrictions", emoji)
+	reactions := []string{"one", "two", "x"}
+	msgTS, err := s.thread.PostPrompt(text, reactions)
+	if err != nil {
+		return nil
+	}
+
+	selected, err := slagent.PollReaction(s.ctx, s.thread, msgTS, reactions, 2*time.Minute)
+	if err != nil {
+		s.thread.RemoveAllReactions(msgTS, reactions)
+		s.thread.UpdateMessage(msgTS, fmt.Sprintf("%s 🔒 *Sandbox*: ❌ cancelled", emoji))
+		return nil
+	}
+
+	s.thread.RemoveAllReactions(msgTS, reactions)
+	switch selected {
+	case "one":
+		s.thread.UpdateMessage(msgTS, fmt.Sprintf("%s 🔒 *Sandbox*: 👉 *enabled*", emoji))
+		v := true
+		return &v
+	case "two":
+		s.thread.UpdateMessage(msgTS, fmt.Sprintf("%s 🔒 *Sandbox*: 👉 *disabled*", emoji))
+		v := false
+		return &v
+	case "x":
+		s.thread.UpdateMessage(msgTS, fmt.Sprintf("%s 🔒 *Sandbox*: ❌ cancelled", emoji))
+		return nil
+	default:
+		s.thread.UpdateMessage(msgTS, fmt.Sprintf("%s 🔒 *Sandbox*: ⏰ timed out", emoji))
+		return nil
+	}
+}
+
 // feedbackLoop polls Slack for messages and feeds them to Claude until the session ends.
 func (s *Session) feedbackLoop(ctx context.Context) {
 	for {
@@ -290,9 +331,10 @@ func (s *Session) feedbackLoop(ctx context.Context) {
 		for _, msg := range messages {
 			switch m := msg.(type) {
 			case slagent.SandboxToggle:
-				if m.Enable != nil {
-					s.handleSandboxToggle(*m.Enable)
+				if result := s.handleSandboxPrompt(); result != nil {
+					s.handleSandboxToggle(*result)
 				}
+				_ = m
 			case slagent.CommandMessage:
 				commands = append(commands, m)
 			case slagent.TextMessage:

@@ -3,7 +3,6 @@ package slagent
 import (
 	"fmt"
 	"strings"
-	"time"
 )
 
 // handleCommand processes /open, /lock, /close, /observe, and /help commands.
@@ -25,57 +24,6 @@ func (t *Thread) handleCommand(userID, cmd string) (bool, string) {
 		t.updateTitle()
 	}
 	return true, feedback
-}
-
-// handleSandboxCommand posts an interactive toggle for sandbox enabled/disabled
-// and polls for the owner's reaction. Returns the selected value (true=enable,
-// false=disable) and whether a selection was made.
-func (t *Thread) handleSandboxCommand() (*bool, bool) {
-	t.mu.Lock()
-	threadTS := t.threadTS
-	t.mu.Unlock()
-
-	if threadTS == "" {
-		return nil, false
-	}
-
-	text := fmt.Sprintf("%s 🔒 *Sandbox*\n> 1️⃣  *Enable* — OS-level filesystem and network isolation\n> 2️⃣  *Disable* — No sandbox restrictions", t.emoji)
-	reactions := []string{"one", "two", "x"}
-	msgTS, err := t.PostPrompt(text, reactions)
-	if err != nil {
-		return nil, false
-	}
-
-	// Poll for reaction (up to 2 minutes)
-	deadline := time.Now().Add(2 * time.Minute)
-	for time.Now().Before(deadline) {
-		time.Sleep(2 * time.Second)
-		selected, err := t.PollReaction(msgTS, reactions)
-		if err != nil {
-			continue
-		}
-		switch selected {
-		case "one":
-			t.RemoveAllReactions(msgTS, reactions)
-			t.UpdateMessage(msgTS, fmt.Sprintf("%s 🔒 *Sandbox*: 👉 *enabled*", t.emoji))
-			v := true
-			return &v, true
-		case "two":
-			t.RemoveAllReactions(msgTS, reactions)
-			t.UpdateMessage(msgTS, fmt.Sprintf("%s 🔒 *Sandbox*: 👉 *disabled*", t.emoji))
-			v := false
-			return &v, true
-		case "x":
-			t.RemoveAllReactions(msgTS, reactions)
-			t.UpdateMessage(msgTS, fmt.Sprintf("%s 🔒 *Sandbox*: ❌ cancelled", t.emoji))
-			return nil, false
-		}
-	}
-
-	// Timeout
-	t.RemoveAllReactions(msgTS, reactions)
-	t.UpdateMessage(msgTS, fmt.Sprintf("%s 🔒 *Sandbox*: ⏰ timed out", t.emoji))
-	return nil, false
 }
 
 // parseInstancePrefix checks if text starts with a :shortcode:: prefix (emoji + colon).
