@@ -26,7 +26,6 @@ type Config struct {
 	OpenAccess     bool     // start with thread open for all participants
 	ClosedAccess   bool     // override inherited access to locked (join/resume)
 	Observe        bool     // observe mode: read all messages, respond only to authorized
-	QuoteMessages  bool     // blockquote bot messages in Slack (experimental)
 	Debug          bool     // write raw JSON events to debug.log
 	NoBye          bool     // don't post goodbye message on exit
 	Workspace      string   // Slack workspace (empty = default)

@@ -83,17 +83,15 @@ Everything after `--` is passed through to the Claude subprocess. This means sla
 
 ### Multi-Instance Threads
 
-Multiple slaude instances can share a Slack thread. Each instance gets a unique identity emoji (e.g. 🦊, 🐶). To address a specific instance, use `:shortcode::` prefix:
+Multiple slaude instances can share a Slack thread. Each instance gets a unique identity emoji (e.g. 🦊, 🐶). To address a specific instance, use `:shortcode:` prefix:
 
 ```
-:fox_face:: focus on the auth module     →  addressed to 🦊 (others see it but ignore)
-:fox_face:: /compact                     →  /command sent exclusively to 🦊
-Messages without prefix                  →  broadcast to all instances
+:fox_face: focus on the auth module     →  addressed to 🦊 (others see it but ignore)
+:fox_face: /compact                     →  /command sent exclusively to 🦊
+Messages without prefix                 →  broadcast to all instances
 ```
 
-Regular messages with `:shortcode::` are delivered to all instances, but the system prompt tells non-targeted instances to ignore them. Commands (`/something`) are instance-exclusive — only the targeted instance receives them.
-
-**Important:** The colon after the emoji (`🦊:`) is required. Type `:fox_face::` in Slack (which renders as `🦊:`). Without the trailing colon, slaude will post a hint with the correct syntax.
+Regular messages with `:shortcode:` prefix are delivered to all instances, but the system prompt tells non-targeted instances to ignore them. Commands (`/something`) are instance-exclusive — only the targeted instance receives them.
 
 ### Thread Access Control
 
@@ -108,16 +106,16 @@ Access has two independent axes:
 - **Off** (default): non-authorized messages filtered out
 - **On**: all messages delivered for passive learning, agent still only responds to authorized users
 
-Use `/open`, `/lock`, and `/observe` to control access (via `:shortcode::` targeting):
+Use `/open`, `/lock`, and `/observe` to control access (via `:shortcode:` targeting):
 
 | Command | Effect |
 |---------|--------|
-| `:fox_face:: /open` | Open thread for everyone |
-| `:fox_face:: /open <@U1> <@U2>` | Allow specific users (additive) |
-| `:fox_face:: /lock` | Lock to owner only (resets all, disables observe) |
-| `:fox_face:: /lock <@U1>` | Ban specific users |
-| `:fox_face:: /close` | Alias for `/lock` |
-| `:fox_face:: /observe` | Toggle observe mode (locked + read all messages) |
+| `:fox_face: /open` | Open thread for everyone |
+| `:fox_face: /open <@U1> <@U2>` | Allow specific users (additive) |
+| `:fox_face: /lock` | Lock to owner only (resets all, disables observe) |
+| `:fox_face: /lock <@U1>` | Ban specific users |
+| `:fox_face: /close` | Alias for `/lock` |
+| `:fox_face: /observe` | Toggle observe mode (locked + read all messages) |
 
 Three mutually exclusive CLI flags control the initial access mode:
 
@@ -135,14 +133,6 @@ When no flag is given:
 - **Non-interactive** (piped): `start` defaults to locked, `join`/`resume` default to observe
 
 Each instance manages its own access independently. Joined/resumed instances don't persist access changes to the shared thread title — their `/open` and `/lock` commands only affect in-memory state.
-
-### Experimental: Blockquote Bot Messages
-
-`--experimental-quote` wraps bot messages in Slack blockquotes (`>`) so they visually stand out from human messages in the thread:
-
-```bash
-slaude start --experimental-quote -c CHANNEL -- "design the API"
-```
 
 Thread title reflects access state:
 - `🔒🧵 Topic` — locked (owner only)
@@ -259,9 +249,9 @@ Network requests get three: ✅ (approve once), 💾 (approve and remember host 
 | Command | Who | Effect |
 |---------|-----|--------|
 | `stop` | Anyone | Interrupt current turn (all instances) |
-| `:fox_face:: stop` | Anyone | Interrupt specific instance |
+| `:fox_face: stop` | Anyone | Interrupt specific instance |
 | `quit` | Owner | Terminate session (all instances) |
-| `:fox_face:: quit` | Owner | Terminate specific instance |
+| `:fox_face: quit` | Owner | Terminate specific instance |
 | `help` | Anyone | Show help text |
 
 Type `help` in any thread to see the full command reference.

@@ -316,9 +316,9 @@ func TestCompatTextHasInlineEmojiPrefix(t *testing.T) {
 
 	content := textMsg.blockText()
 
-	// Must start with identity emoji inline (not on a separate line)
-	if !strings.HasPrefix(content, "🐶 ") {
-		t.Errorf("text message should start with '🐶 ' (dog emoji), got: %q", content)
+	// Must start with blockquoted identity emoji
+	if !strings.HasPrefix(content, "> 🐶 ") {
+		t.Errorf("text message should start with '> 🐶 ' (blockquoted dog emoji), got: %q", content)
 	}
 
 	// Must contain the text (converted via MarkdownToMrkdwn)
@@ -578,9 +578,9 @@ func TestCompatMarkQuestionReplacesTrailingQuestionMark(t *testing.T) {
 		t.Errorf("should end with ' ❓', got: %q", content)
 	}
 
-	// Must have @mention inline with identity emoji — prefix prepended at finish
-	if !strings.HasPrefix(content, "🐱 <@U123>: ") {
-		t.Errorf("should start with '🐱 <@U123>: ', got: %q", content)
+	// Must have blockquoted @mention inline with identity emoji
+	if !strings.HasPrefix(content, "> 🐱 <@U123>: ") {
+		t.Errorf("should start with '> 🐱 <@U123>: ', got: %q", content)
 	}
 }
 

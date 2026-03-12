@@ -164,15 +164,6 @@ func (t *Thread) pollOnce() ([]Message, error) {
 			continue
 		}
 
-		// Detect near-miss targeting (wrong syntax) and give ephemeral feedback
-		if !targeted {
-			if hint := mistargeted(msg.Text); hint != "" {
-				t.PostEphemeral(msg.User, hint)
-				t.advanceLastTS(msg.Timestamp)
-				continue
-			}
-		}
-
 		if targeted && strings.HasPrefix(rest, "/") {
 			// Commands are instance-exclusive
 			if targetID != t.instanceID {
@@ -235,8 +226,6 @@ func (t *Thread) pollOnce() ([]Message, error) {
 		if !authorized {
 			// Tell the user they're not authorized when they try to interact directly
 			if targeted && targetID == t.instanceID {
-				t.PostEphemeral(msg.User, t.emoji+" 🚫 Not authorized. Ask the thread owner to `/open`.")
-			} else if !targeted && isMistargetedToUs(msg.Text, t.instanceID) {
 				t.PostEphemeral(msg.User, t.emoji+" 🚫 Not authorized. Ask the thread owner to `/open`.")
 			}
 

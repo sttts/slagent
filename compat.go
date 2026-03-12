@@ -27,7 +27,6 @@ type compatTurn struct {
 	blockID       string    // slagent block_id for message tagging
 	emoji         string    // identity emoji prefix for text messages
 	thinkingEmoji string    // Slack shortcode for thinking/running indicator
-	quoteMessages bool      // blockquote bot messages
 	slackLog      io.Writer // optional Slack API logger
 
 	// Unified activity message (thinking + tools + status)
@@ -51,7 +50,7 @@ type compatTurn struct {
 	mu sync.Mutex
 }
 
-func newCompatTurn(api *slackapi.Client, channel, threadTS, blockID, emoji, thinkingEmoji string, quoteMessages bool, slackLog io.Writer) *compatTurn {
+func newCompatTurn(api *slackapi.Client, channel, threadTS, blockID, emoji, thinkingEmoji string, slackLog io.Writer) *compatTurn {
 	return &compatTurn{
 		api:           api,
 		channel:       channel,
@@ -59,7 +58,6 @@ func newCompatTurn(api *slackapi.Client, channel, threadTS, blockID, emoji, thin
 		blockID:       blockID,
 		emoji:         emoji,
 		thinkingEmoji: thinkingEmoji,
-		quoteMessages: quoteMessages,
 		slackLog:      slackLog,
 		toolIndex:     make(map[string]int),
 	}
@@ -76,12 +74,12 @@ func (c *compatTurn) logSlack(action, content string) {
 // textMsgOpts returns message options for a text message with emoji prefix.
 // Converts markdown to Slack mrkdwn format. Uses a section block with the given block_id.
 // The block_id should include the appropriate suffix (~, ~act, or none).
-func textMsgOpts(display, blockID, emoji string, quote, plainText bool) []slackapi.MsgOption {
+func textMsgOpts(display, blockID, emoji string, plainText bool) []slackapi.MsgOption {
 	var converted string
 	if plainText {
 		// Plan mode: wrap in code block, no mrkdwn conversion
 		converted = emoji + " 📋\n```\n" + display + "\n```"
-	} else if quote {
+	} else {
 		body := MarkdownToMrkdwn(display)
 		// Blockquote every line so bot messages stand out among human messages
 		lines := strings.Split(body, "\n")
@@ -90,8 +88,6 @@ func textMsgOpts(display, blockID, emoji string, quote, plainText bool) []slacka
 			lines[i] = "> " + lines[i]
 		}
 		converted = strings.Join(lines, "\n")
-	} else {
-		converted = emoji + " " + MarkdownToMrkdwn(display)
 	}
 	section := slackapi.NewSectionBlock(
 		slackapi.NewTextBlockObject("mrkdwn", converted, false, false),
@@ -374,7 +370,7 @@ func (c *compatTurn) postText() {
 
 	// While streaming, use ~ suffix so pollers know this message isn't final
 	streamBlockID := c.blockID + "~"
-	opts := textMsgOpts(full, streamBlockID, c.emoji, c.quoteMessages, c.plainText)
+	opts := textMsgOpts(full, streamBlockID, c.emoji, c.plainText)
 
 	converted := c.emoji + " " + MarkdownToMrkdwn(full)
 	if c.textTS == "" {
@@ -464,7 +460,7 @@ func (c *compatTurn) finish() error {
 	}
 
 	// Update existing text message with full content — use final block_id (no suffix)
-	opts := textMsgOpts(finalText, c.blockID, c.emoji, c.quoteMessages, c.plainText)
+	opts := textMsgOpts(finalText, c.blockID, c.emoji, c.plainText)
 	finalConverted := c.emoji + " " + MarkdownToMrkdwn(finalText)
 
 	// If activity is below the text message, delete old text and repost below activity

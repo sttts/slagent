@@ -97,10 +97,6 @@ func (s *Session) connectSlack() error {
 	if s.cfg.Observe {
 		opts = append(opts, slagent.WithObserve())
 	}
-	if s.cfg.QuoteMessages {
-		opts = append(opts, slagent.WithQuoteMessages())
-	}
-
 	// Log Slack API calls in debug mode
 	if s.cfg.Debug {
 		f, err := os.Create("slack.log")

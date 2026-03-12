@@ -124,7 +124,7 @@ The activity message is managed by Turn (compat backend). Tasks message is manag
 - Format: `📋 Tasks\n☐ pending\n⏳ in_progress\n✅ completed`
 
 ## Emoji-Prefix Instance Targeting
-See README.md for user-facing syntax (`:shortcode::` prefix, `/open`, `/lock` commands, title format).
+See README.md for user-facing syntax (`:shortcode:` prefix, `/open`, `/lock` commands, title format).
 
 Implementation:
 - `parseInstancePrefix()` in `thread.go`, used by `pollOnce()` in `reply.go`.

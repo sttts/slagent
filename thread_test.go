@@ -1244,80 +1244,6 @@ func TestBareHelpMessage(t *testing.T) {
 	}
 }
 
-func TestMistargeted(t *testing.T) {
-	tests := []struct {
-		input    string
-		wantHint bool
-	}{
-		// Near-miss: single colon + command
-		{":fox_face: /compact", true},
-		{":dog: /open", true},
-		{"<@U123> :fox_face: /compact", true},
-
-		// Near-miss: Unicode emoji + command (with various spacing/colons)
-		{"🦊 /compact", true},
-		{"🦊  /compact", true},
-		{"🦊: /compact", true},
-		{"🐶 /open", true},
-
-		// Correct syntax — not a near-miss
-		{":fox_face:: /compact", false},
-
-		// Not a command — no hint needed
-		{":fox_face: hello", false},
-		{"🦊 hello", false},
-
-		// Unknown emoji — no hint
-		{":not_an_emoji: /compact", false},
-		{"😀 /compact", false},
-
-		// Plain text
-		{"hello world", false},
-	}
-	for _, tt := range tests {
-		hint := mistargeted(tt.input)
-		if tt.wantHint && hint == "" {
-			t.Errorf("mistargeted(%q) = empty, want hint", tt.input)
-		}
-		if !tt.wantHint && hint != "" {
-			t.Errorf("mistargeted(%q) = %q, want empty", tt.input, hint)
-		}
-	}
-}
-
-func TestMistargetedFeedbackPosted(t *testing.T) {
-	mock := newMockSlack()
-	defer mock.close()
-
-	thread := NewThread(mock.client(), "C_TEST",
-		WithOwner("U_OWNER"),
-		WithInstanceID("fox_face"),
-	)
-	thread.Start("Test")
-
-	// Inject a near-miss message: Unicode emoji + command
-	mock.injectReply("C_TEST", thread.ThreadTS(), "U_OWNER", "🦊 /compact")
-	replies, err := thread.PollReplies()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(replies) != 0 {
-		t.Errorf("near-miss should not produce replies, got %d", len(replies))
-	}
-
-	// Check ephemeral feedback was posted
-	var found bool
-	for _, m := range mock.ephemeralMessages() {
-		if strings.Contains(m.Text, "::") && strings.Contains(m.Text, "fox_face") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Error("near-miss feedback should be posted")
-	}
-}
-
 func TestParseMention(t *testing.T) {
 	tests := []struct {
 		input string
@@ -2191,21 +2117,26 @@ func TestParseInstancePrefix(t *testing.T) {
 		wantRest   string
 		wantTarget bool
 	}{
-		// Targeted with colon + space (renders as 🦊: hello)
+		// Double colon (legacy syntax, still works)
 		{":fox_face:: hello", "fox_face", "hello", true},
-		// Targeted with colon, no space
 		{":fox_face::hello", "fox_face", "hello", true},
-		// Targeted with colon before /command
 		{":fox_face:: /open", "fox_face", "/open", true},
+
+		// Single colon (new: also targeted)
+		{":fox_face: hello", "fox_face", "hello", true},
+		{":fox_face: /open", "fox_face", "/open", true},
+
+		// No space after shortcode
+		{":fox_face:hello", "fox_face", "hello", true},
+
 		// Slack space variants (Slack inserts spaces unpredictably)
 		{":fox_face: : hello", "fox_face", "hello", true},
 		{":fox_face: :/open", "fox_face", "/open", true},
 		{":fox_face: : ", "fox_face", "", true},
-		{":fox_face:  : /open", "fox_face", "/open", true},  // double space before colon
-		{":fox_face: :  /open", "fox_face", "/open", true},  // double space after colon
-		{":fox_face:  :  /open", "fox_face", "/open", true}, // double spaces both sides
-		// Without trailing colon — NOT targeted (must be explicit)
-		{":fox_face: hello", "", ":fox_face: hello", false},
+		{":fox_face:  : /open", "fox_face", "/open", true},
+		{":fox_face: :  /open", "fox_face", "/open", true},
+		{":fox_face:  :  /open", "fox_face", "/open", true},
+
 		// No prefix — not targeted
 		{"hello world", "", "hello world", false},
 		// Unknown shortcode — not targeted
@@ -2215,6 +2146,8 @@ func TestParseInstancePrefix(t *testing.T) {
 		// Just the shortcode with colon, no rest
 		{":dog:: ", "dog", "", true},
 		{":dog::", "dog", "", true},
+		{":dog: ", "dog", "", true},
+		{":dog:", "dog", "", true},
 	}
 	for _, tt := range tests {
 		id, rest, targeted := parseInstancePrefix(tt.text)

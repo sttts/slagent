@@ -43,7 +43,6 @@ type StartCmd struct {
 	Topic                      []string `arg:"" optional:"" help:"Planning topic."`
 	Debug                      bool     `help:"Print raw JSON events from Claude to terminal."`
 	NoBye                      bool     `help:"Don't post a goodbye message to Slack on exit."`
-	ExperimentalQuote          bool     `help:"Blockquote bot messages in Slack (experimental)."`
 	DangerousAutoApprove        string   `help:"Auto-approve sandbox risk level: never|green|yellow (default: never)." default:"never" enum:"never,green,yellow"`
 	DangerousAutoApproveNetwork string   `help:"Auto-approve network access: never|known|any (default: never)." default:"never" enum:"never,known,any"`
 	ClaudeArgs                 []string `name:"-" hidden:""`
@@ -58,7 +57,6 @@ type JoinCmd struct {
 	Open                       bool     `help:"Open thread for all participants."`
 	Debug                      bool     `help:"Print raw JSON events from Claude to terminal."`
 	NoBye                      bool     `help:"Don't post a goodbye message to Slack on exit."`
-	ExperimentalQuote          bool     `help:"Blockquote bot messages in Slack (experimental)."`
 	DangerousAutoApprove        string   `help:"Auto-approve sandbox risk level: never|green|yellow (default: never)." default:"never" enum:"never,green,yellow"`
 	DangerousAutoApproveNetwork string   `help:"Auto-approve network access: never|known|any (default: never)." default:"never" enum:"never,known,any"`
 	ClaudeArgs                 []string `name:"-" hidden:""`
@@ -72,7 +70,6 @@ type ResumeCmd struct {
 	Open                       bool     `help:"Open thread for all participants."`
 	Debug                      bool     `help:"Print raw JSON events from Claude to terminal."`
 	NoBye                      bool     `help:"Don't post a goodbye message to Slack on exit."`
-	ExperimentalQuote          bool     `help:"Blockquote bot messages in Slack (experimental)."`
 	DangerousAutoApprove        string   `help:"Auto-approve sandbox risk level: never|green|yellow (default: never)." default:"never" enum:"never,green,yellow"`
 	DangerousAutoApproveNetwork string   `help:"Auto-approve network access: never|known|any (default: never)." default:"never" enum:"never,known,any"`
 	ClaudeArgs                 []string `name:"-" hidden:""`
@@ -128,7 +125,6 @@ func (cmd *StartCmd) Run() error {
 		Channel:                    cmd.Channel,
 		Debug:                      cmd.Debug,
 		NoBye:                      cmd.NoBye,
-		QuoteMessages:              cmd.ExperimentalQuote,
 		Workspace:                  cli.Workspace,
 		ClaudeArgs:                 cmd.ClaudeArgs,
 		DangerousAutoApprove:        cmd.DangerousAutoApprove,
@@ -235,7 +231,6 @@ func (cmd *JoinCmd) Run() error {
 		Observe:                    cmd.Observe,
 		Debug:                      cmd.Debug,
 		NoBye:                      cmd.NoBye,
-		QuoteMessages:              cmd.ExperimentalQuote,
 		Workspace:                  cli.Workspace,
 		ClaudeArgs:                 cmd.ClaudeArgs,
 		DangerousAutoApprove:        cmd.DangerousAutoApprove,
@@ -274,7 +269,6 @@ func (cmd *ResumeCmd) Run() error {
 		Observe:                    cmd.Observe,
 		Debug:                      cmd.Debug,
 		NoBye:                      cmd.NoBye,
-		QuoteMessages:              cmd.ExperimentalQuote,
 		Workspace:                  cli.Workspace,
 		ClaudeArgs:                 cmd.ClaudeArgs,
 		DangerousAutoApprove:        cmd.DangerousAutoApprove,

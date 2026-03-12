@@ -329,7 +329,7 @@ func (t *Thread) NewTurn() Turn {
 	if isNativeToken(t.client.Token()) {
 		w = newNativeTurn(t.client.Token(), t.config.apiURL, t.channel, threadTS, t.config.markdownConverter, t.config.bufferSize)
 	} else {
-		w = newCompatTurn(t.client.Client, t.channel, threadTS, t.blockID, t.emoji, t.config.thinkingEmoji, t.config.quoteMessages, t.config.slackLog)
+		w = newCompatTurn(t.client.Client, t.channel, threadTS, t.blockID, t.emoji, t.config.thinkingEmoji, t.config.slackLog)
 	}
 	return &turnImpl{w: w}
 }
