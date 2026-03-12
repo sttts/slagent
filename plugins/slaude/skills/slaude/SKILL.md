@@ -20,7 +20,10 @@ Use this skill when asked to start, stop, join, or manage Claude Code sessions m
 Verify setup:
 ```bash
 slaude status
+slaude version           # check installed version
 ```
+
+The version is also injected into the agent's system prompt.
 
 ## Starting a Session
 

@@ -38,6 +38,11 @@ go install github.com/sttts/slagent/cmd/slaude@latest
 go build -o slaude ./cmd/slaude/
 ```
 
+Check your version:
+```bash
+slaude version          # or: slaude --version
+```
+
 ### Set up Slack credentials
 
 ```bash

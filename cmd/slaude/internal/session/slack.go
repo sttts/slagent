@@ -157,7 +157,8 @@ func (s *Session) buildExtraArgs() []string {
 		}
 
 		slackCtx := fmt.Sprintf(
-			"Your session is mirrored to a Slack thread. "+
+			"You are running slaude version %s. "+
+				"Your session is mirrored to a Slack thread. "+
 				"Your identity in this thread is %s (:%s:). "+
 				"Your messages appear prefixed with %s in Slack.\n\n"+
 				"Messages prefixed with [Team feedback from Slack] contain input from "+
@@ -189,7 +190,7 @@ func (s *Session) buildExtraArgs() []string {
 				"- Be concise. Slack readers prefer short, focused responses.\n"+
 				"- When outputting tabular data with columns, always wrap it in a code block (```) so it renders with fixed-width alignment in Slack."+
 				"%s%s",
-			emoji, instanceID, emoji, instanceID, instanceID, instanceID, instanceID, instanceID, ownerCtx, observeCtx)
+			s.cfg.Version, emoji, instanceID, emoji, instanceID, instanceID, instanceID, instanceID, instanceID, ownerCtx, observeCtx)
 		// Combine soul content + slack context into --system-prompt
 		systemPrompt := slackCtx
 		if soulContent != "" {

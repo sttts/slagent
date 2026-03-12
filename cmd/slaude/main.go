@@ -19,8 +19,12 @@ import (
 	"github.com/sttts/slagent/credential"
 )
 
+// version is set by goreleaser via ldflags.
+var version = "dev"
+
 var cli struct {
 	Workspace string      `short:"w" help:"Slack workspace URL (e.g. myteam.slack.com). Uses default if omitted." placeholder:"WORKSPACE"`
+	Version   VersionCmd  `cmd:"" help:"Print version and exit."`
 	Start     StartCmd    `cmd:"" help:"Start a new Slack thread with a Claude session."`
 	Join      JoinCmd     `cmd:"" help:"Join an existing Slack thread with a new slaude instance."`
 	Resume    ResumeCmd   `cmd:"" help:"Resume an existing session in a Slack thread."`
@@ -31,6 +35,14 @@ var cli struct {
 	Status    StatusCmd   `cmd:"" help:"Show current configuration."`
 	Ps        PsCmd       `cmd:"" help:"List running slaude sessions."`
 	Kill      KillCmd     `cmd:"" help:"Kill a running slaude session by emoji or PID."`
+}
+
+// VersionCmd prints the version and exits.
+type VersionCmd struct{}
+
+func (cmd *VersionCmd) Run() error {
+	fmt.Println(version)
+	return nil
 }
 
 // StartCmd starts a new interactive session with Claude Code.
@@ -123,6 +135,7 @@ func (cmd *StartCmd) Run() error {
 	cfg := session.Config{
 		Topic:                      strings.Join(cmd.Topic, " "),
 		Channel:                    cmd.Channel,
+		Version:                    version,
 		Debug:                      cmd.Debug,
 		NoBye:                      cmd.NoBye,
 		Workspace:                  cli.Workspace,
@@ -226,6 +239,7 @@ func (cmd *JoinCmd) Run() error {
 		Topic:                      strings.Join(cmd.Topic, " "),
 		Channel:                    ch,
 		ResumeThreadTS:             threadTS,
+		Version:                    version,
 		OpenAccess:                 cmd.Open,
 		ClosedAccess:               cmd.Locked,
 		Observe:                    cmd.Observe,
@@ -264,6 +278,7 @@ func (cmd *ResumeCmd) Run() error {
 		ResumeThreadTS:             threadTS,
 		ResumeAfterTS:              afterTS,
 		InstanceID:                 instanceID,
+		Version:                    version,
 		OpenAccess:                 cmd.Open,
 		ClosedAccess:               cmd.Locked,
 		Observe:                    cmd.Observe,
@@ -603,6 +618,12 @@ func main() {
 			break
 		}
 		kongArgs = append(kongArgs, a)
+	}
+
+	// Handle --version before kong parsing
+	if len(kongArgs) == 1 && (kongArgs[0] == "--version" || kongArgs[0] == "-v") {
+		fmt.Println(version)
+		return
 	}
 
 	parser, err := kong.New(&cli,
