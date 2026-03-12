@@ -109,8 +109,9 @@ func textMsgOpts(display, blockID, emoji string, quote, plainText bool) []slacka
 func (c *compatTurn) renderActivity() string {
 	var lines []string
 
-	// Thinking lines
-	if c.thinkBuf.Len() > 0 {
+	// Thinking indicator: only shown before tools appear.
+	// Once tools are active they carry their own :claude: spinner.
+	if c.thinkBuf.Len() > 0 && len(c.activities) == 0 {
 		lines = append(lines, c.emoji+c.thinkingEmoji)
 		thinkText := c.thinkBuf.String()
 		if len(thinkText) > 500 {
@@ -121,8 +122,30 @@ func (c *compatTurn) renderActivity() string {
 		}
 	}
 
-	// Activity lines (tools, status)
-	lines = append(lines, c.activities...)
+	// Activity lines (tools, status).
+	// Only one :claude: spinner visible at a time (the last running tool),
+	// unless in question mode where all spinners are shown.
+	if c.question {
+		lines = append(lines, c.activities...)
+	} else {
+		// Find the last line with a running spinner
+		lastSpinner := -1
+		for i := len(c.activities) - 1; i >= 0; i-- {
+			if strings.HasPrefix(c.activities[i], c.thinkingEmoji+" ") {
+				lastSpinner = i
+				break
+			}
+		}
+
+		for i, line := range c.activities {
+			// Demote earlier running spinners to "⋯"
+			if i != lastSpinner && strings.HasPrefix(line, c.thinkingEmoji+" ") {
+				lines = append(lines, "⋯"+line[len(c.thinkingEmoji):])
+			} else {
+				lines = append(lines, line)
+			}
+		}
+	}
 
 	// Keep last maxDisplayLines
 	if len(lines) > maxDisplayLines {

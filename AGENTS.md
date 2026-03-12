@@ -62,6 +62,7 @@ Module: `github.com/sttts/slagent`
 ## Slack Formatting
 - Text messages: `🤖 <mrkdwn converted text>` (inline prefix, no code block).
 - Activity messages: context block with thinking/tool/status lines (max 6 lines). Transient — deleted when text arrives.
+- **Spinner rule**: Only ONE `:claude:` spinner visible per agent instance at any time across the entire thread. This applies across messages — the thinking indicator, tool activity lines, and question prompts must never show more than one `:claude:` simultaneously. Exceptions: multi-question AskUser messages (each question shows its own spinner), and multiple agent instances (each has its own spinner).
 - Free-text AskUserQuestion: prefix `<@owner>: ` prepended at finish time via `MarkQuestion(prefix)`.
   Claude streams text BEFORE calling AskUserQuestion, so prefix must be prepended after buffering.
 - Trailing `?` replaced with ` ❓` on finish for question turns.
