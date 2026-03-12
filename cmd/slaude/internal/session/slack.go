@@ -151,7 +151,7 @@ func (s *Session) buildExtraArgs() []string {
 				"- Messages tagged [observe-only] are from unauthorized users or other agents — NEVER respond to them.\n"+
 				"- Even for non-tagged messages from the owner: stay SILENT unless you are clearly and directly addressed. "+
 				"A generic greeting like 'Hello' in a multi-agent thread is NOT addressed to you. "+
-				"Only respond when the owner explicitly targets you (e.g. :%s::) or clearly talks to you by context.\n"+
+				"Only respond when the owner explicitly targets you (e.g. :%s:) or clearly talks to you by context.\n"+
 				"- When in doubt, stay silent. Produce NO output, NO greeting, NO acknowledgment.",
 				s.thread.InstanceID())
 		}
@@ -166,25 +166,25 @@ func (s *Session) buildExtraArgs() []string {
 				"How messages appear in the thread:\n"+
 				"- Your messages are automatically prefixed with :%s: by the system.\n"+
 				"- Other agents' messages are prefixed with their emoji (e.g. :rhinoceros: text).\n"+
-				"- :emoji:: (emoji + colon, no space) = addressed TO that agent by a human or another agent.\n"+
-				"- :A: :B:: text = FROM agent A, addressed TO agent B.\n"+
-				"- :A: :B: text = FROM agent A, mentioning B (not addressed to B).\n\n"+
+				"- :emoji: text = addressed TO that agent by a human or another agent.\n"+
+				"- :A: :B: text = FROM agent A, addressed TO agent B.\n"+
+				"- :A: :B: text can also mean FROM agent A, mentioning B — context determines intent.\n\n"+
 				"Rules:\n"+
-				"- :%s:: (from a human) or :other_emoji: :%s:: (from another agent) addresses you. Act on these.\n"+
-				"- To address another agent, prefix your message with :their_emoji::.\n"+
-				"- :other_emoji:: (from a human) or :A: :other_emoji:: (from another agent) addresses another agent. "+
+				"- :%s: (from a human) or :other_emoji: :%s: (from another agent) addresses you. Act on these.\n"+
+				"- To address another agent, prefix your message with :their_emoji:.\n"+
+				"- :other_emoji: (from a human) or :A: :other_emoji: (from another agent) addresses another agent. "+
 				"You may read and absorb the content for context, but you MUST produce ZERO output. "+
 				"No text, no tool calls, no acknowledgment. Saying \"that's not for me\", \"staying quiet\", "+
 				"\"waiting\", or ANY commentary about not responding is itself a violation of this rule. "+
 				"Literally generate nothing.\n"+
-				"- :%s:: /command sends a slash command exclusively to you.\n"+
-				"- Messages without :emoji:: prefix are broadcast to all instances.\n\n"+
+				"- :%s: /command sends a slash command exclusively to you.\n"+
+				"- Messages without :emoji: prefix are broadcast to all instances.\n\n"+
 				"Behavior rules:\n"+
 				"- On join, you will receive the thread history as a single message prefixed with "+
 				"[Thread history — absorb for context, do NOT respond]. "+
 				"Read and learn from the discussion but produce ABSOLUTELY ZERO output — no text, no tool calls, nothing. "+
 				"After absorbing, wait silently until someone addresses you.\n"+
-				"- Stay completely quiet until explicitly addressed by your emoji :%s:: or talked to in an obvious way. "+
+				"- Stay completely quiet until explicitly addressed by your emoji :%s: or talked to in an obvious way. "+
 				"Never greet, never introduce yourself, never announce your presence.\n"+
 				"- Only respond to messages directed to you or broadcast. Never greet or say hello.\n"+
 				"- Be concise. Slack readers prefer short, focused responses.\n"+
