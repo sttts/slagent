@@ -216,10 +216,14 @@ known-hosts:
   - host: api.github.com
     path: "/repos/**"
 
-  # Allow specific HTTP methods
+  # Allow specific HTTP methods (default: [GET, HEAD])
   - host: registry.npmjs.org
     methods: [GET, HEAD, PUT]
 ```
+
+**Host patterns** — `*` matches one DNS label (`*.github.com` → `api.github.com`), `**` matches one or more (`**.github.com` → `a.b.github.com`).
+**Path patterns** — `*` matches one segment (`/repos/*` → `/repos/foo`), `**` matches one or more (`/repos/**` → `/repos/foo/bar`).
+**Methods** default to `[GET, HEAD]` when omitted.
 
 Workspace-specific overrides for slaude go in `~/.config/slagent/slaude.yaml`:
 
@@ -290,16 +294,6 @@ Add to `~/.claude/settings.json`:
 | `--log-file` | Append timestamped classification decisions to file |
 
 The hook reads `classifier.yaml` for defaults (thresholds, known hosts, rules). Safe tools (TodoWrite, TaskCreate, etc.) are auto-approved without classification. On classification failure, it falls open to user prompt (never blocks).
-
-**Host patterns** (DNS-aware):
-- `*` matches exactly one DNS label — `*.github.com` matches `api.github.com` but not `a.b.github.com`
-- `**` matches one or more DNS labels — `**.github.com` matches `api.github.com` and `a.b.github.com`
-
-**Path patterns** (URL path segments):
-- `*` matches exactly one path segment — `/repos/*` matches `/repos/foo` but not `/repos/foo/bar`
-- `**` matches one or more segments — `/repos/**` matches `/repos/foo` and `/repos/foo/bar`
-
-**Methods** default to `[GET, HEAD]` when omitted. The AI classifier extracts the HTTP method from each tool call for matching.
 
 #### Slack approval reactions
 
