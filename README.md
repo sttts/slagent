@@ -258,9 +258,37 @@ known-hosts:
 
 When known-hosts entries are present in the config file, they **replace** the built-in defaults entirely.
 
+#### Custom rules
+
+Add project-specific classification rules that get appended to the AI prompt:
+
+```yaml
+rules:
+  - "go test, go build, go vet, go mod tidy are GREEN even though they may write build artifacts or fetch modules."
+  - "Makefile targets (make test, make lint, make imports) in the project directory are GREEN."
+```
+
+Rules don't override the built-in risk levels — they give the classifier additional context for domain-specific decisions.
+
+#### Path traversal detection
+
+The classifier detects path traversal attempts. File operations that escape the working directory via `..`, absolute paths, or symlinks are classified as at least yellow (reads) or red (writes/executes):
+
+- `Read ../foo` → 🟡 yellow ("path traversal outside project directory")
+- `Read /etc/passwd` → 🟡 yellow ("system file outside project directory")
+- `Read cmd/main.go` → 🟢 green ("within project")
+
 #### Standalone hook: claude-command-classifier-hook
 
-The classifier can also run as a standalone Claude Code PreToolUse hook, without slaude or Slack. Add to `~/.claude/settings.json`:
+The classifier can also run as a standalone Claude Code PreToolUse hook, without slaude or Slack.
+
+Install:
+
+```bash
+go install github.com/sttts/slagent/cmd/claude-command-classifier-hook@latest
+```
+
+Add to `~/.claude/settings.json`:
 
 ```json
 {
@@ -271,7 +299,7 @@ The classifier can also run as a standalone Claude Code PreToolUse hook, without
         "hooks": [
           {
             "type": "command",
-            "command": "claude-command-classifier-hook --auto-approve=green --auto-approve-network=known"
+            "command": "claude-command-classifier-hook --auto-approve=green --auto-approve-network=known --log-file=$HOME/.claude/hooks/logs/classifier.log"
           }
         ]
       }
@@ -280,7 +308,15 @@ The classifier can also run as a standalone Claude Code PreToolUse hook, without
 }
 ```
 
-The hook reads `classifier.yaml` for defaults; CLI flags `--auto-approve` and `--auto-approve-network` override config values. Safe tools (TodoWrite, TaskCreate, etc.) are auto-approved without classification. On classification failure, it falls open to user prompt (never blocks).
+**CLI flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--auto-approve` | Threshold: `never`, `green`, `yellow` (overrides config) |
+| `--auto-approve-network` | Network policy: `never`, `known`, `any` (overrides config) |
+| `--log-file` | Append timestamped classification decisions to file |
+
+The hook reads `classifier.yaml` for defaults (thresholds, known hosts, rules). Safe tools (TodoWrite, TaskCreate, etc.) are auto-approved without classification. On classification failure, it falls open to user prompt (never blocks).
 
 **Host patterns** (DNS-aware):
 - `*` matches exactly one DNS label — `*.github.com` matches `api.github.com` but not `a.b.github.com`
