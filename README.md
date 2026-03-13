@@ -200,20 +200,6 @@ Classifier settings are shared between slaude and the standalone `claude-command
 # Classifier settings (shared by slaude and claude-command-classifier-hook)
 auto-approve: green
 auto-approve-network: known
-
-# Known-safe network destinations
-known-hosts:
-  - host: github.com
-  - host: api.github.com
-  - host: raw.githubusercontent.com
-  - host: proxy.golang.org
-  - host: sum.golang.org
-  - host: registry.npmjs.org
-  - host: pypi.org
-  - host: files.pythonhosted.org
-  - host: rubygems.org
-  - host: crates.io
-  - host: static.crates.io
 ```
 
 Workspace-specific overrides for slaude go in `~/.config/slagent/slaude.yaml`:
