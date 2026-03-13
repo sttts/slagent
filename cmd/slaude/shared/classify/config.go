@@ -12,6 +12,7 @@ type Config struct {
 	AutoApprove        string        // "never", "green", "yellow"
 	AutoApproveNetwork string        // "never", "known", "any"
 	KnownHosts         *KnownHostSet // nil means use defaults
+	Rules              []string      // extra classification rules appended to the prompt
 }
 
 // LoadConfig reads classifier settings from ~/.config/slagent/classifier.yaml.
@@ -34,8 +35,8 @@ func ParseConfigFile(filePath string) Config {
 	}
 	defer f.Close()
 
-	// Track whether we've entered the known-hosts section
-	var inKnownHosts bool
+	// Track which section we're in
+	var section string // "known-hosts", "rules", or ""
 	var knownHostLines []string
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
@@ -48,28 +49,38 @@ func ParseConfigFile(filePath string) Config {
 		// Top-level keys (no indentation)
 		if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
 			if strings.HasPrefix(trimmed, "auto-approve-network:") {
-				inKnownHosts = false
+				section = ""
 				cfg.AutoApproveNetwork = Unquote(strings.TrimSpace(strings.TrimPrefix(trimmed, "auto-approve-network:")))
 			} else if strings.HasPrefix(trimmed, "auto-approve:") {
-				inKnownHosts = false
+				section = ""
 				cfg.AutoApprove = Unquote(strings.TrimSpace(strings.TrimPrefix(trimmed, "auto-approve:")))
 			} else if trimmed == "known-hosts:" {
-				inKnownHosts = true
+				section = "known-hosts"
+			} else if trimmed == "rules:" {
+				section = "rules"
 			} else {
-				inKnownHosts = false
+				section = ""
 			}
 			continue
 		}
 
-		// Indented lines belonging to known-hosts
-		if inKnownHosts {
+		// Indented lines belonging to current section
+		switch section {
+		case "known-hosts":
 			knownHostLines = append(knownHostLines, trimmed)
+		case "rules":
+			// Parse "- some rule text" entries
+			if strings.HasPrefix(trimmed, "- ") {
+				rule := Unquote(strings.TrimSpace(strings.TrimPrefix(trimmed, "- ")))
+				if rule != "" {
+					cfg.Rules = append(cfg.Rules, rule)
+				}
+			}
 		}
 	}
 
 	// Parse collected known-hosts lines
 	if len(knownHostLines) > 0 {
-		// Re-parse as if it were a standalone known-hosts file
 		content := strings.Join(knownHostLines, "\n")
 		s := bufio.NewScanner(strings.NewReader(content))
 		if dests, err := parseKnownHostsFromScanner(s); err == nil && len(dests) > 0 {

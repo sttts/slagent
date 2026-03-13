@@ -87,7 +87,7 @@ func main() {
 	}
 
 	// Run AI classification
-	cls, clsErr := classify.Classify(context.Background(), input.ToolName, input.ToolInput)
+	cls, clsErr := classify.Classify(context.Background(), input.ToolName, input.ToolInput, cfg.Rules...)
 	if clsErr != nil {
 		// Fail-open to user prompt on classification error
 		writeResult("ask", fmt.Sprintf("Classification failed: %v", clsErr), "")

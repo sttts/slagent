@@ -24,7 +24,8 @@ type Classification struct {
 const classificationTimeout = 30 * time.Second
 
 // Classify shells out to `claude -p --model haiku` to assess the risk of a tool call.
-func Classify(ctx context.Context, toolName string, input json.RawMessage) (*Classification, error) {
+// Optional rules are appended to the classification prompt.
+func Classify(ctx context.Context, toolName string, input json.RawMessage, rules ...string) (*Classification, error) {
 	cwd, _ := os.Getwd()
 	prompt := fmt.Sprintf(`You are a security classifier for Claude Code tool permission requests.
 
@@ -66,6 +67,19 @@ GREEN|NETWORK:GET:api.github.com/repos/sttts/nanoschnack|Querying GitHub API for
 RED|NETWORK:GET:evil.com/payload|Downloading script from unknown host
 YELLOW|NETWORK:GET:registry.npmjs.org|Installing npm packages from official registry
 RED|NETWORK:POST:webhook.example.com/hook|Sending data to external webhook`, toolName, string(input), cwd)
+
+	// Append user-defined rules
+	if len(rules) > 0 {
+		var b strings.Builder
+		b.WriteString(prompt)
+		b.WriteString("\n\nAdditional project-specific classification rules:\n")
+		for _, r := range rules {
+			b.WriteString("- ")
+			b.WriteString(r)
+			b.WriteByte('\n')
+		}
+		prompt = b.String()
+	}
 
 	ctx, cancel := context.WithTimeout(ctx, classificationTimeout)
 	defer cancel()
