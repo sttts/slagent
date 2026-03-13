@@ -37,11 +37,6 @@ jobs:
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "Auto-tag: ${tag}"
 
-      - name: Create and push tag
-        run: |
-          git tag "${{ steps.tag.outputs.tag }}"
-          git push origin "${{ steps.tag.outputs.tag }}"
-
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -58,6 +53,11 @@ jobs:
           git add .claude-plugin/marketplace.json plugins/slaude/.claude-plugin/plugin.json
           git diff --cached --quiet || git commit -m "chore: stamp plugin version ${TAG} [skip ci]"
           git push origin master
+
+      - name: Create and push tag
+        run: |
+          git tag "${{ steps.tag.outputs.tag }}"
+          git push origin "${{ steps.tag.outputs.tag }}"
 
       - uses: goreleaser/goreleaser-action@v6
         with:
