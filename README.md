@@ -231,8 +231,6 @@ workspaces:
     dangerous-auto-approve-network: known
 ```
 
-When known-hosts entries are present in the config file, they **replace** the built-in defaults entirely.
-
 #### Custom rules
 
 Add project-specific classification rules that get appended to the AI prompt:
