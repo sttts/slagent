@@ -82,7 +82,12 @@ func (s *Session) handlePermission(req *perms.PermissionRequest) *perms.Permissi
 		case "any":
 			networkOK = true
 		case "known":
-			networkOK = s.knownHosts.MatchRequest(cls.NetworkDst, cls.NetworkPath, cls.Method)
+			for _, dst := range cls.NetworkDests() {
+				if !s.knownHosts.MatchRequest(dst, cls.NetworkPath, cls.Method) {
+					networkOK = false
+					break
+				}
+			}
 		default:
 			networkOK = false
 		}
@@ -92,7 +97,14 @@ func (s *Session) handlePermission(req *perms.PermissionRequest) *perms.Permissi
 		var reason string
 		if cls.Network {
 			knownTag := "unknown"
-			if s.knownHosts.MatchRequest(cls.NetworkDst, cls.NetworkPath, cls.Method) {
+			allKnown := true
+			for _, dst := range cls.NetworkDests() {
+				if !s.knownHosts.MatchRequest(dst, cls.NetworkPath, cls.Method) {
+					allKnown = false
+					break
+				}
+			}
+			if allKnown {
 				knownTag = "known"
 			}
 			reason = fmt.Sprintf("%s+%s", cls.Level, knownTag)

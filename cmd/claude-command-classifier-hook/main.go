@@ -109,7 +109,13 @@ func main() {
 		case "any":
 			networkOK = true
 		case "known":
-			networkOK = knownHosts.MatchRequest(cls.NetworkDst, cls.NetworkPath, cls.Method)
+			// Check each destination (haiku may return comma-separated hosts)
+			for _, dst := range cls.NetworkDests() {
+				if !knownHosts.MatchRequest(dst, cls.NetworkPath, cls.Method) {
+					networkOK = false
+					break
+				}
+			}
 		default:
 			networkOK = false
 		}
@@ -119,7 +125,14 @@ func main() {
 		var reason string
 		if cls.Network {
 			knownTag := "unknown"
-			if knownHosts.MatchRequest(cls.NetworkDst, cls.NetworkPath, cls.Method) {
+			allKnown := true
+			for _, dst := range cls.NetworkDests() {
+				if !knownHosts.MatchRequest(dst, cls.NetworkPath, cls.Method) {
+					allKnown = false
+					break
+				}
+			}
+			if allKnown {
 				knownTag = "known"
 			}
 			reason = fmt.Sprintf("%s %s (%s+%s) %s", emoji, input.ToolName, cls.Level, knownTag, cls.Reasoning)

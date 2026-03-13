@@ -143,6 +143,22 @@ func Parse(line string) *Classification {
 	return c
 }
 
+// NetworkDests returns all network destinations, splitting comma-separated values.
+// Haiku sometimes returns multiple hosts like "proxy.golang.org,sum.golang.org".
+func (c *Classification) NetworkDests() []string {
+	if c.NetworkDst == "" {
+		return nil
+	}
+	var dests []string
+	for _, d := range strings.Split(c.NetworkDst, ",") {
+		d = strings.TrimSpace(d)
+		if d != "" {
+			dests = append(dests, d)
+		}
+	}
+	return dests
+}
+
 // IsHTTPMethod returns true if s is a recognized HTTP method.
 func IsHTTPMethod(s string) bool {
 	switch s {
