@@ -223,199 +223,8 @@ func TestUpdateTodosInvalidJSONClearsList(t *testing.T) {
 	}
 }
 
-func TestParseClassification(t *testing.T) {
-	tests := []struct {
-		name        string
-		line        string
-		wantLevel   string
-		wantNet     bool
-		wantNetDst  string
-		wantPath    string
-		wantMethod  string
-	}{
-		{
-			name:      "green no network",
-			line:      "GREEN|NONE|Reading source file within project",
-			wantLevel: "green",
-		},
-		{
-			name:       "host only (legacy format)",
-			line:       "YELLOW|NETWORK:registry.npmjs.org|Installing npm packages",
-			wantLevel:  "yellow",
-			wantNet:    true,
-			wantNetDst: "registry.npmjs.org",
-		},
-		{
-			name:       "method and host",
-			line:       "GREEN|NETWORK:GET:api.github.com|Querying GitHub API",
-			wantLevel:  "green",
-			wantNet:    true,
-			wantNetDst: "api.github.com",
-			wantMethod: "GET",
-		},
-		{
-			name:        "method, host, and path",
-			line:        "GREEN|NETWORK:GET:api.github.com/repos/sttts/foo|Querying repo info",
-			wantLevel:   "green",
-			wantNet:     true,
-			wantNetDst:  "api.github.com",
-			wantPath:    "/repos/sttts/foo",
-			wantMethod:  "GET",
-		},
-		{
-			name:        "POST with path",
-			line:        "RED|NETWORK:POST:webhook.example.com/hook|Sending data to webhook",
-			wantLevel:   "red",
-			wantNet:     true,
-			wantNetDst:  "webhook.example.com",
-			wantPath:    "/hook",
-			wantMethod:  "POST",
-		},
-		{
-			name:       "red with unknown network",
-			line:       "RED|NETWORK:evil.com|Exfiltrating data",
-			wantLevel:  "red",
-			wantNet:    true,
-			wantNetDst: "evil.com",
-		},
-		{
-			name:      "lowercase accepted",
-			line:      "green|NONE|Safe read",
-			wantLevel: "green",
-		},
-		{
-			name:       "multiline takes first",
-			line:       "GREEN|NETWORK:GET:proxy.golang.org|Fetching module\nsome extra text",
-			wantLevel:  "green",
-			wantNet:    true,
-			wantNetDst: "proxy.golang.org",
-			wantMethod: "GET",
-		},
-		{
-			name:       "unparseable defaults to red+network",
-			line:       "garbage",
-			wantLevel:  "red",
-			wantNet:    true,
-			wantNetDst: "unknown",
-		},
-		{
-			name:       "network with empty destination",
-			line:       "YELLOW|NETWORK:|Unknown destination",
-			wantLevel:  "yellow",
-			wantNet:    true,
-			wantNetDst: "unknown",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := parseClassification(tt.line)
-			if c.Level != tt.wantLevel {
-				t.Errorf("Level = %q, want %q", c.Level, tt.wantLevel)
-			}
-			if c.Network != tt.wantNet {
-				t.Errorf("Network = %v, want %v", c.Network, tt.wantNet)
-			}
-			if c.NetworkDst != tt.wantNetDst {
-				t.Errorf("NetworkDst = %q, want %q", c.NetworkDst, tt.wantNetDst)
-			}
-			if c.NetworkPath != tt.wantPath {
-				t.Errorf("NetworkPath = %q, want %q", c.NetworkPath, tt.wantPath)
-			}
-			if c.Method != tt.wantMethod {
-				t.Errorf("Method = %q, want %q", c.Method, tt.wantMethod)
-			}
-		})
-	}
-}
-
-func TestLevelAllowed(t *testing.T) {
-	tests := []struct {
-		level     string
-		threshold string
-		want      bool
-	}{
-		{"green", "never", false},
-		{"yellow", "never", false},
-		{"red", "never", false},
-		{"green", "green", true},
-		{"yellow", "green", false},
-		{"red", "green", false},
-		{"green", "yellow", true},
-		{"yellow", "yellow", true},
-		{"red", "yellow", false},
-	}
-
-	for _, tt := range tests {
-		name := tt.level + "/" + tt.threshold
-		t.Run(name, func(t *testing.T) {
-			got := levelAllowed(tt.level, tt.threshold)
-			if got != tt.want {
-				t.Errorf("levelAllowed(%q, %q) = %v, want %v", tt.level, tt.threshold, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestParseKnownHostsFile(t *testing.T) {
-	content := `# Package managers
-- host: github.com
-- host: api.github.com
-  path: "/repos/**"
-  methods: [GET, HEAD]
-- host: "*.googleapis.com"
-- host: '*.cdn.example.com'
-
-# Comment
-- host: pypi.org
-- invalid line
-- host:
-`
-	tmp := t.TempDir()
-	path := tmp + "/known-hosts.yaml"
-	os.WriteFile(path, []byte(content), 0644)
-
-	dests, err := parseKnownHostsFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(dests) != 5 {
-		t.Fatalf("got %d dests, want 5: %+v", len(dests), dests)
-	}
-
-	// github.com — host only (defaults to GET+HEAD)
-	if dests[0].Host != "github.com" || dests[0].Path != "" {
-		t.Errorf("dests[0] = %+v", dests[0])
-	}
-	if !dests[0].Methods["GET"] || !dests[0].Methods["HEAD"] || len(dests[0].Methods) != 2 {
-		t.Errorf("dests[0] methods should default to GET+HEAD, got %v", dests[0].Methods)
-	}
-
-	// api.github.com with path and methods
-	if dests[1].Host != "api.github.com" || dests[1].Path != "/repos/**" {
-		t.Errorf("dests[1] host/path = %+v", dests[1])
-	}
-	if !dests[1].Methods["GET"] || !dests[1].Methods["HEAD"] || len(dests[1].Methods) != 2 {
-		t.Errorf("dests[1] methods = %v", dests[1].Methods)
-	}
-
-	// Glob hosts
-	if dests[2].Host != "*.googleapis.com" {
-		t.Errorf("dests[2] = %+v", dests[2])
-	}
-	if dests[3].Host != "*.cdn.example.com" {
-		t.Errorf("dests[3] = %+v", dests[3])
-	}
-
-	// pypi.org
-	if dests[4].Host != "pypi.org" {
-		t.Errorf("dests[4] = %+v", dests[4])
-	}
-}
-
 func TestKnownHostSetMatch(t *testing.T) {
-	set := &knownHostSet{dests: []knownDest{
+	set := &knownHostSet{Dests: []knownDest{
 		{Host: "github.com"},
 		{Host: "api.github.com"},
 		{Host: "*.googleapis.com"},
@@ -444,15 +253,15 @@ func TestKnownHostSetMatch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.host, func(t *testing.T) {
-			if got := set.match(tt.host); got != tt.want {
-				t.Errorf("match(%q) = %v, want %v", tt.host, got, tt.want)
+			if got := set.Match(tt.host); got != tt.want {
+				t.Errorf("Match(%q) = %v, want %v", tt.host, got, tt.want)
 			}
 		})
 	}
 }
 
 func TestKnownHostSetMatchRequest(t *testing.T) {
-	set := &knownHostSet{dests: []knownDest{
+	set := &knownHostSet{Dests: []knownDest{
 		{Host: "github.com"},
 		{Host: "api.github.com", Path: "/repos/**", Methods: map[string]bool{"GET": true, "HEAD": true}},
 		{Host: "uploads.example.com", Path: "/files/*"},
@@ -480,61 +289,8 @@ func TestKnownHostSetMatchRequest(t *testing.T) {
 	for _, tt := range tests {
 		name := tt.host + tt.path + ":" + tt.method
 		t.Run(name, func(t *testing.T) {
-			if got := set.matchRequest(tt.host, tt.path, tt.method); got != tt.want {
-				t.Errorf("matchRequest(%q, %q, %q) = %v, want %v", tt.host, tt.path, tt.method, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestMatchHostPattern(t *testing.T) {
-	tests := []struct {
-		pattern string
-		host    string
-		want    bool
-	}{
-		{"github.com", "github.com", true},
-		{"github.com", "api.github.com", false},
-		{"*.github.com", "api.github.com", true},
-		{"*.github.com", "a.b.github.com", false},
-		{"*.github.com", "github.com", false},
-		{"**.github.com", "api.github.com", true},
-		{"**.github.com", "a.b.github.com", true},
-		{"**.github.com", "a.b.c.github.com", true},
-		{"**.github.com", "github.com", false},
-		{"cdn.*.example.com", "cdn.us.example.com", true},
-		{"cdn.*.example.com", "cdn.us.east.example.com", false},
-		{"cdn.**.example.com", "cdn.us.east.example.com", true},
-	}
-
-	for _, tt := range tests {
-		name := tt.pattern + "/" + tt.host
-		t.Run(name, func(t *testing.T) {
-			if got := matchHostPattern(tt.pattern, tt.host); got != tt.want {
-				t.Errorf("matchHostPattern(%q, %q) = %v, want %v", tt.pattern, tt.host, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestMatchPathPattern(t *testing.T) {
-	tests := []struct {
-		pattern string
-		path    string
-		want    bool
-	}{
-		{"/repos/**", "/repos/foo/bar", true},
-		{"/repos/**", "/repos/foo", true},
-		{"/repos/**", "/repos", false},
-		{"/repos/*", "/repos/foo", true},
-		{"/repos/*", "/repos/foo/bar", false},
-	}
-
-	for _, tt := range tests {
-		name := tt.pattern + ":" + tt.path
-		t.Run(name, func(t *testing.T) {
-			if got := matchPathPattern(tt.pattern, tt.path); got != tt.want {
-				t.Errorf("matchPathPattern(%q, %q) = %v, want %v", tt.pattern, tt.path, got, tt.want)
+			if got := set.MatchRequest(tt.host, tt.path, tt.method); got != tt.want {
+				t.Errorf("MatchRequest(%q, %q, %q) = %v, want %v", tt.host, tt.path, tt.method, got, tt.want)
 			}
 		})
 	}
@@ -542,8 +298,8 @@ func TestMatchPathPattern(t *testing.T) {
 
 func TestKnownHostSetAdd(t *testing.T) {
 	set := &knownHostSet{}
-	set.add("new.example.com")
-	if !set.match("new.example.com") {
+	set.Add("new.example.com")
+	if !set.Match("new.example.com") {
 		t.Error("added host should match")
 	}
 }
@@ -552,22 +308,22 @@ func TestLoadKnownHostsDefaults(t *testing.T) {
 	set := loadKnownHosts()
 
 	// Defaults require GET/HEAD method
-	if !set.matchRequest("github.com", "", "GET") {
+	if !set.MatchRequest("github.com", "", "GET") {
 		t.Error("defaults should include github.com GET")
 	}
-	if !set.matchRequest("proxy.golang.org", "", "HEAD") {
+	if !set.MatchRequest("proxy.golang.org", "", "HEAD") {
 		t.Error("defaults should include proxy.golang.org HEAD")
 	}
-	if set.matchRequest("github.com", "", "POST") {
+	if set.MatchRequest("github.com", "", "POST") {
 		t.Error("defaults should not allow github.com POST")
 	}
-	if set.matchRequest("evil.com", "", "GET") {
+	if set.MatchRequest("evil.com", "", "GET") {
 		t.Error("defaults should not include evil.com")
 	}
 
-	// match() without method should not match method-restricted entries
-	if set.match("github.com") {
-		t.Error("match() without method should not match method-restricted defaults")
+	// Match() without method should not match method-restricted entries
+	if set.Match("github.com") {
+		t.Error("Match() without method should not match method-restricted defaults")
 	}
 }
 
@@ -784,17 +540,3 @@ func TestMultiSelectToggleRendering(t *testing.T) {
 	}
 }
 
-func TestLevelEmoji(t *testing.T) {
-	if e := levelEmoji("green"); e != "🟢" {
-		t.Errorf("green = %q", e)
-	}
-	if e := levelEmoji("yellow"); e != "🟡" {
-		t.Errorf("yellow = %q", e)
-	}
-	if e := levelEmoji("red"); e != "🔴" {
-		t.Errorf("red = %q", e)
-	}
-	if e := levelEmoji("unknown"); e != "🔴" {
-		t.Errorf("unknown = %q", e)
-	}
-}

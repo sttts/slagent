@@ -106,6 +106,9 @@ Module: `github.com/sttts/slagent`
 - Permission prompt message is deleted from Slack after approval/denial to keep thread clean.
 - `--mcp-config` expects a file path, not inline JSON. Config written to temp file.
 - Sandbox violations (outside working directory) are blocked by Claude Code before the permission prompt fires.
+- Classification logic lives in shared package `cmd/slaude/shared/classify/`, used by both slaude and `claude-command-classifier-hook`.
+- Shared classifier config: `~/.config/slagent/classifier.yaml` (auto-approve thresholds + known hosts).
+- Workspace-specific slaude config: `~/.config/slagent/slaude.yaml` (thinking-emoji, per-workspace overrides).
 
 ## Slack Thread Message Ordering (bottom of thread)
 Messages at the end of the thread follow this order:

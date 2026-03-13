@@ -82,7 +82,7 @@ func (s *Session) handlePermission(req *perms.PermissionRequest) *perms.Permissi
 		case "any":
 			networkOK = true
 		case "known":
-			networkOK = s.knownHosts.matchRequest(cls.NetworkDst, cls.NetworkPath, cls.Method)
+			networkOK = s.knownHosts.MatchRequest(cls.NetworkDst, cls.NetworkPath, cls.Method)
 		default:
 			networkOK = false
 		}
@@ -92,7 +92,7 @@ func (s *Session) handlePermission(req *perms.PermissionRequest) *perms.Permissi
 		var reason string
 		if cls.Network {
 			knownTag := "unknown"
-			if s.knownHosts.matchRequest(cls.NetworkDst, cls.NetworkPath, cls.Method) {
+			if s.knownHosts.MatchRequest(cls.NetworkDst, cls.NetworkPath, cls.Method) {
 				knownTag = "known"
 			}
 			reason = fmt.Sprintf("%s+%s", cls.Level, knownTag)
@@ -145,7 +145,7 @@ func (s *Session) handlePermission(req *perms.PermissionRequest) *perms.Permissi
 		return &perms.PermissionResponse{Behavior: "allow"}
 	case "floppy_disk":
 		if cls.Network && cls.NetworkDst != "" && cls.NetworkDst != "unknown" {
-			s.knownHosts.add(cls.NetworkDst)
+			s.knownHosts.Add(cls.NetworkDst)
 			s.ui.Info(fmt.Sprintf("  💾 Remembered %s as known host", cls.NetworkDst))
 		}
 		s.thread.DeleteMessage(msgTS)

@@ -192,39 +192,95 @@ The classification result (level, network destination, reasoning) is shown in th
 
 On classification failure (e.g. `claude` not in PATH), the request defaults to red + network (always goes to Slack).
 
-#### Known hosts
+#### Configuration
 
-When using `--dangerous-auto-approve-network known`, slaude checks network destinations against a list of known-safe hosts. Built-in defaults include GitHub, Go proxy, npm, PyPI, RubyGems, and crates.io.
-
-To customize, create `~/.config/slagent/known-hosts.yaml`:
+Classifier settings are shared between slaude and the standalone `claude-command-classifier-hook` via `~/.config/slagent/classifier.yaml`:
 
 ```yaml
-# Simple host entries (default: GET and HEAD only)
-- host: proxy.golang.org
-- host: sum.golang.org
-- host: registry.npmjs.org
-- host: pypi.org
-- host: github.com
+# Classifier settings (shared by slaude and claude-command-classifier-hook)
+auto-approve: green
+auto-approve-network: known
 
-# Host glob patterns (* = one label, ** = one or more labels)
-- host: "*.googleapis.com"       # matches storage.googleapis.com
-- host: "**.amazonaws.com"       # matches s3.us-east-1.amazonaws.com
-
-# Restrict by URL path
-- host: api.github.com
-  path: "/repos/**"
-
-# Allow specific HTTP methods (default: [GET, HEAD])
-- host: registry.npmjs.org
-  methods: [GET, HEAD, PUT]
-
-# Full example: host + path + methods
-- host: api.example.com
-  path: "/v1/read/**"
-  methods: [GET]
+# Known-safe network destinations
+known-hosts:
+  - host: github.com
+  - host: api.github.com
+  - host: raw.githubusercontent.com
+  - host: proxy.golang.org
+  - host: sum.golang.org
+  - host: registry.npmjs.org
+  - host: pypi.org
+  - host: files.pythonhosted.org
+  - host: rubygems.org
+  - host: crates.io
+  - host: static.crates.io
 ```
 
-When this file exists, it **replaces** the built-in defaults entirely.
+Workspace-specific overrides for slaude go in `~/.config/slagent/slaude.yaml`:
+
+```yaml
+workspaces:
+  nvidia.enterprise.slack.com:
+    thinking-emoji: ":claude-thinking:"
+    dangerous-auto-approve: green
+    dangerous-auto-approve-network: known
+```
+
+#### Known hosts
+
+When using `--dangerous-auto-approve-network known`, the classifier checks network destinations against known-safe hosts. Built-in defaults include GitHub, Go proxy, npm, PyPI, RubyGems, and crates.io.
+
+To customize, add `known-hosts` entries to `~/.config/slagent/classifier.yaml`:
+
+```yaml
+known-hosts:
+  # Simple host entries (default: GET and HEAD only)
+  - host: proxy.golang.org
+  - host: github.com
+
+  # Host glob patterns (* = one label, ** = one or more labels)
+  - host: "*.googleapis.com"       # matches storage.googleapis.com
+  - host: "**.amazonaws.com"       # matches s3.us-east-1.amazonaws.com
+
+  # Restrict by URL path
+  - host: api.github.com
+    path: "/repos/**"
+
+  # Allow specific HTTP methods (default: [GET, HEAD])
+  - host: registry.npmjs.org
+    methods: [GET, HEAD, PUT]
+
+  # Full example: host + path + methods
+  - host: api.example.com
+    path: "/v1/read/**"
+    methods: [GET]
+```
+
+When known-hosts entries are present in the config file, they **replace** the built-in defaults entirely.
+
+#### Standalone hook: claude-command-classifier-hook
+
+The classifier can also run as a standalone Claude Code PreToolUse hook, without slaude or Slack. Add to `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "claude-command-classifier-hook --auto-approve=green --auto-approve-network=known"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The hook reads `classifier.yaml` for defaults; CLI flags `--auto-approve` and `--auto-approve-network` override config values. Safe tools (TodoWrite, TaskCreate, etc.) are auto-approved without classification. On classification failure, it falls open to user prompt (never blocks).
 
 **Host patterns** (DNS-aware):
 - `*` matches exactly one DNS label — `*.github.com` matches `api.github.com` but not `a.b.github.com`

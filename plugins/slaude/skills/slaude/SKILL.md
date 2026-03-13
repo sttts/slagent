@@ -43,10 +43,10 @@ slaude start -c CHANNEL -- "your prompt here"
 | `--open` | Open for all thread participants |
 | `--debug` | Write raw JSON events for troubleshooting |
 | `--no-bye` | Skip goodbye message on exit |
-| `--dangerous-auto-approve green` | Auto-approve read-only operations |
-| `--dangerous-auto-approve yellow` | Auto-approve local writes too |
-| `--dangerous-auto-approve-network known` | Auto-approve network to known hosts (GitHub, npm, Go proxy, etc.) |
-| `--dangerous-auto-approve-network any` | Auto-approve all network access |
+| `--dangerous-auto-approve green` | Auto-approve read-only operations (overrides `classifier.yaml`) |
+| `--dangerous-auto-approve yellow` | Auto-approve local writes too (overrides `classifier.yaml`) |
+| `--dangerous-auto-approve-network known` | Auto-approve network to known hosts (overrides `classifier.yaml`) |
+| `--dangerous-auto-approve-network any` | Auto-approve all network access (overrides `classifier.yaml`) |
 
 **Access mode flags** (`--locked`, `--observe`, `--open`) are mutually exclusive.
 When no flag is given — interactive terminal prompts `Closed, oBserve, or open? [cBo]`; non-interactive: `start` defaults to `--locked`, `join`/`resume` default to `--observe`.

@@ -7,20 +7,28 @@ import (
 	"strings"
 )
 
-// workspaceConfig holds per-workspace settings from ~/.config/slagent/config.yaml.
+// workspaceConfig holds per-workspace settings from ~/.config/slagent/slaude.yaml.
 type workspaceConfig struct {
 	ThinkingEmoji               string
 	DangerousAutoApprove        string
 	DangerousAutoApproveNetwork string
 }
 
-// loadWorkspaceConfig loads workspace-specific settings from config.yaml.
+// loadWorkspaceConfig loads workspace-specific settings from slaude.yaml,
+// falling back to config.yaml for migration.
 func loadWorkspaceConfig(workspace string) workspaceConfig {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return workspaceConfig{}
 	}
-	return parseConfigFile(filepath.Join(home, ".config", "slagent", "config.yaml"), workspace)
+
+	// Try slaude.yaml first, fall back to config.yaml
+	dir := filepath.Join(home, ".config", "slagent")
+	cfg := parseConfigFile(filepath.Join(dir, "slaude.yaml"), workspace)
+	if cfg == (workspaceConfig{}) {
+		cfg = parseConfigFile(filepath.Join(dir, "config.yaml"), workspace)
+	}
+	return cfg
 }
 
 // parseConfigFile reads a config.yaml and returns settings for the given workspace.

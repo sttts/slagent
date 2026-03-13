@@ -399,8 +399,9 @@ trailing `❓`.
 Permission requests are classified by `claude -p --model haiku` for sandbox
 risk (green/yellow/red) and network access (host, path, HTTP method).
 Safe operations can be auto-approved based on `--dangerous-auto-approve` and
-`--dangerous-auto-approve-network` flags. Known-safe network destinations
-are configured in `~/.config/slagent/known-hosts.yaml`.
+`--dangerous-auto-approve-network` flags. Shared classifier settings
+(thresholds and known-safe hosts) are in `~/.config/slagent/classifier.yaml`.
+Workspace-specific slaude overrides go in `~/.config/slagent/slaude.yaml`.
 
 ## Multi-Instance Threads
 
