@@ -32,12 +32,18 @@ Classify this tool call by sandbox escape risk and network access.
 
 Tool: %s
 Input: %s
-Working directory: %s
+Working directory (project root): %s
+
+IMPORTANT — path traversal rules:
+- File paths that stay WITHIN the working directory are safe (GREEN for reads, YELLOW for writes).
+- Paths that escape the working directory via "..", absolute paths outside it, or symlinks pointing outside it are DANGEROUS. Reading files outside the project is at least YELLOW (information disclosure risk). Writing or executing outside is RED.
+- Resolve relative paths against the working directory to determine if they escape. For example, if working directory is /home/user/project, then "../foo" resolves to /home/user/foo which is OUTSIDE the project.
+- Be especially wary of paths targeting home directories, /etc, /tmp, credential files, or other sensitive locations.
 
 Risk levels:
-- GREEN: read-only local operations, safe file reads, searches, listing
-- YELLOW: local writes to project files, running tests, installing deps from known sources
-- RED: arbitrary code execution with untrusted input, modifying system files, exfiltrating data, credential access, destructive ops
+- GREEN: read-only operations on files WITHIN the project directory, safe searches, listing
+- YELLOW: local writes to project files, running tests, installing deps from known sources, reading files OUTSIDE the project directory
+- RED: writing or executing outside the project, arbitrary code execution with untrusted input, modifying system files, exfiltrating data, credential access, destructive ops
 
 Network: does this operation access the network? If yes, what destination, path, and HTTP method?
 
@@ -53,6 +59,8 @@ Where:
 Examples:
 GREEN|NONE|Reading source file within project
 YELLOW|NONE|Writing test file in project directory
+YELLOW|NONE|Reading file outside project directory via path traversal
+RED|NONE|Writing to file outside project directory
 GREEN|NETWORK:GET:proxy.golang.org|Fetching Go module from official proxy
 GREEN|NETWORK:GET:api.github.com/repos/sttts/nanoschnack|Querying GitHub API for repo info
 RED|NETWORK:GET:evil.com/payload|Downloading script from unknown host
