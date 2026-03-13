@@ -200,27 +200,11 @@ Classifier settings are shared between slaude and the standalone `claude-command
 # Classifier settings (shared by slaude and claude-command-classifier-hook)
 auto-approve: green
 auto-approve-network: known
-```
 
-Workspace-specific overrides for slaude go in `~/.config/slagent/slaude.yaml`:
-
-```yaml
-workspaces:
-  nvidia.enterprise.slack.com:
-    thinking-emoji: ":claude-thinking:"
-    dangerous-auto-approve: green
-    dangerous-auto-approve-network: known
-```
-
-#### Known hosts
-
-When using `--dangerous-auto-approve-network known`, the classifier checks network destinations against known-safe hosts. Built-in defaults include GitHub, Go proxy, npm, PyPI, RubyGems, and crates.io.
-
-To customize, add `known-hosts` entries to `~/.config/slagent/classifier.yaml`:
-
-```yaml
+# Known-safe network destinations (replaces built-in defaults when present).
+# Built-in defaults: GitHub, Go proxy, npm, PyPI, RubyGems, crates.io.
 known-hosts:
-  # Simple host entries (default: GET and HEAD only)
+  # Simple host entries (default methods: GET, HEAD)
   - host: proxy.golang.org
   - host: github.com
 
@@ -232,14 +216,19 @@ known-hosts:
   - host: api.github.com
     path: "/repos/**"
 
-  # Allow specific HTTP methods (default: [GET, HEAD])
+  # Allow specific HTTP methods
   - host: registry.npmjs.org
     methods: [GET, HEAD, PUT]
+```
 
-  # Full example: host + path + methods
-  - host: api.example.com
-    path: "/v1/read/**"
-    methods: [GET]
+Workspace-specific overrides for slaude go in `~/.config/slagent/slaude.yaml`:
+
+```yaml
+workspaces:
+  nvidia.enterprise.slack.com:
+    thinking-emoji: ":claude-thinking:"
+    dangerous-auto-approve: green
+    dangerous-auto-approve-network: known
 ```
 
 When known-hosts entries are present in the config file, they **replace** the built-in defaults entirely.
