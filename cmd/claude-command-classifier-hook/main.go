@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/sttts/slagent/cmd/slaude/shared/classify"
 )
@@ -43,10 +45,22 @@ var safeTools = map[string]bool{
 	"TaskStop":   true,
 }
 
+var logFile *os.File
+
 func main() {
 	autoApproveFlag := flag.String("auto-approve", "", "auto-approve threshold: never, green, yellow (overrides config)")
 	autoApproveNetFlag := flag.String("auto-approve-network", "", "auto-approve network policy: never, known, any (overrides config)")
+	logFileFlag := flag.String("log-file", "", "path to log file for classification decisions")
 	flag.Parse()
+
+	// Set up file logging
+	if *logFileFlag != "" {
+		f, err := os.OpenFile(*logFileFlag, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+		if err == nil {
+			logFile = f
+			defer logFile.Close()
+		}
+	}
 
 	// Load config
 	cfg := classify.LoadConfig()
@@ -131,7 +145,15 @@ func main() {
 	writeResult("ask", detail.String(), fmt.Sprintf("Classification: %s, network: %v dst=%s", cls.Level, cls.Network, cls.NetworkDst))
 }
 
+func logf(format string, args ...any) {
+	if logFile != nil {
+		msg := fmt.Sprintf(format, args...)
+		log.New(logFile, "", 0).Printf("%s %s", time.Now().Format("2006-01-02T15:04:05.000"), msg)
+	}
+}
+
 func writeResult(decision, reason, context string) {
+	logf("%s: %s", decision, reason)
 	out := hookOutput{
 		HookSpecificOutput: hookSpecific{
 			HookEventName:            "PreToolUse",
