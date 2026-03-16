@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 )
@@ -23,9 +22,28 @@ type Classification struct {
 
 const classificationTimeout = 30 * time.Second
 
-// Classify shells out to `claude -p --model haiku` to assess the risk of a tool call.
+// Classify assesses the risk of a tool call using the default backend.
 // Optional rules are appended to the classification prompt.
 func Classify(ctx context.Context, toolName string, input json.RawMessage, rules ...string) (*Classification, error) {
+	return ClassifyWith(ctx, DefaultBackend(), toolName, input, rules...)
+}
+
+// ClassifyWith assesses the risk of a tool call using the given backend.
+func ClassifyWith(ctx context.Context, backend Backend, toolName string, input json.RawMessage, rules ...string) (*Classification, error) {
+	prompt := buildPrompt(toolName, string(input), rules)
+
+	ctx, cancel := context.WithTimeout(ctx, classificationTimeout)
+	defer cancel()
+
+	out, err := backend.Complete(ctx, prompt)
+	if err != nil {
+		return &Classification{Level: "red", Network: true, NetworkDst: "unknown", Reasoning: "classification failed"}, err
+	}
+	return Parse(out), nil
+}
+
+// buildPrompt constructs the classification prompt.
+func buildPrompt(toolName, input string, rules []string) string {
 	cwd, _ := os.Getwd()
 	prompt := fmt.Sprintf(`You are a security classifier for Claude Code tool permission requests.
 
@@ -66,7 +84,7 @@ GREEN|NETWORK:GET:proxy.golang.org|Fetching Go module from official proxy
 GREEN|NETWORK:GET:api.github.com/repos/sttts/nanoschnack|Querying GitHub API for repo info
 RED|NETWORK:GET:evil.com/payload|Downloading script from unknown host
 YELLOW|NETWORK:GET:registry.npmjs.org|Installing npm packages from official registry
-RED|NETWORK:POST:webhook.example.com/hook|Sending data to external webhook`, toolName, string(input), cwd)
+RED|NETWORK:POST:webhook.example.com/hook|Sending data to external webhook`, toolName, input, cwd)
 
 	// Append user-defined rules
 	if len(rules) > 0 {
@@ -80,22 +98,7 @@ RED|NETWORK:POST:webhook.example.com/hook|Sending data to external webhook`, too
 		}
 		prompt = b.String()
 	}
-
-	ctx, cancel := context.WithTimeout(ctx, classificationTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "claude", "-p", "--output-format", "text", "--model", "haiku", "--no-session-persistence", prompt)
-	var stderr strings.Builder
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	if err != nil {
-		errMsg := strings.TrimSpace(stderr.String())
-		if errMsg != "" {
-			err = fmt.Errorf("%w: %s", err, errMsg)
-		}
-		return &Classification{Level: "red", Network: true, NetworkDst: "unknown", Reasoning: "classification failed"}, err
-	}
-	return Parse(strings.TrimSpace(string(out))), nil
+	return prompt
 }
 
 // Parse parses a "LEVEL|NETWORK_STATUS|reasoning" line.

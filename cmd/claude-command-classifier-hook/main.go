@@ -95,16 +95,17 @@ func main() {
 	}
 
 	// Run AI classification
+	backend := classify.DefaultBackend()
 	t0 := time.Now()
-	cls, clsErr := classify.Classify(context.Background(), input.ToolName, input.ToolInput, cfg.Rules...)
+	cls, clsErr := classify.ClassifyWith(context.Background(), backend, input.ToolName, input.ToolInput, cfg.Rules...)
 	dur := time.Since(t0)
 
 	if clsErr != nil {
 		if passthrough {
-			logf("[%4.1fs] passthrough: classification failed: %v", dur.Seconds(), clsErr)
+			logf("[%4.1fs/%s] passthrough: classification failed: %v", dur.Seconds(), backend.Name(), clsErr)
 			return
 		}
-		logf("[%4.1fs] ask: classification failed: %v", dur.Seconds(), clsErr)
+		logf("[%4.1fs/%s] ask: classification failed: %v", dur.Seconds(), backend.Name(), clsErr)
 		writeResult("ask", fmt.Sprintf("Classification failed: %v", clsErr), "")
 		return
 	}
@@ -153,7 +154,7 @@ func main() {
 		} else {
 			reason = fmt.Sprintf("%s %s (%s) %s", emoji, input.ToolName, cls.Level, cls.Reasoning)
 		}
-		logf("[%4.1fs] allow: %s", dur.Seconds(), reason)
+		logf("[%4.1fs/%s] allow: %s", dur.Seconds(), backend.Name(), reason)
 		writeResult("allow", reason, fmt.Sprintf("Classification: %s, network: %v", cls.Level, cls.Network))
 		return
 	}
@@ -172,10 +173,10 @@ func main() {
 	}
 
 	if passthrough {
-		logf("[%4.1fs] passthrough: %s", dur.Seconds(), detail.String())
+		logf("[%4.1fs/%s] passthrough: %s", dur.Seconds(), backend.Name(), detail.String())
 		return
 	}
-	logf("[%4.1fs] ask: %s", dur.Seconds(), detail.String())
+	logf("[%4.1fs/%s] ask: %s", dur.Seconds(), backend.Name(), detail.String())
 	writeResult("ask", detail.String(), fmt.Sprintf("Classification: %s, network: %v dst=%s", cls.Level, cls.Network, cls.NetworkDst))
 }
 
