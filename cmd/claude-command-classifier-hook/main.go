@@ -87,9 +87,11 @@ func main() {
 		return
 	}
 
+	toolDesc := input.ToolName
+
 	// Auto-approve safe tools
 	if safeTools[input.ToolName] {
-		logf("allow: %s (safe tool)", input.ToolName)
+		logf("allow: %s (safe tool): %s", toolDesc, string(input.ToolInput))
 		writeResult("allow", fmt.Sprintf("Auto-approved safe tool: %s", input.ToolName), "")
 		return
 	}
@@ -102,10 +104,10 @@ func main() {
 
 	if clsErr != nil {
 		if passthrough {
-			logf("[%4.1fs/%s] passthrough: classification failed: %v", dur.Seconds(), backend.Name(), clsErr)
+			logf("[%.1fs/%s] passthrough: %s classification failed: %v: %s", dur.Seconds(), backend.Name(), toolDesc, clsErr, string(input.ToolInput))
 			return
 		}
-		logf("[%4.1fs/%s] ask: classification failed: %v", dur.Seconds(), backend.Name(), clsErr)
+		logf("[%.1fs/%s] ask: %s classification failed: %v: %s", dur.Seconds(), backend.Name(), toolDesc, clsErr, string(input.ToolInput))
 		writeResult("ask", fmt.Sprintf("Classification failed: %v", clsErr), "")
 		return
 	}
@@ -154,7 +156,7 @@ func main() {
 		} else {
 			reason = fmt.Sprintf("%s %s (%s) %s", emoji, input.ToolName, cls.Level, cls.Reasoning)
 		}
-		logf("[%4.1fs/%s] allow: %s", dur.Seconds(), backend.Name(), reason)
+		logf("[%.1fs/%s] allow: %s %s %s: %s", dur.Seconds(), backend.Name(), toolDesc, emoji, cls.Reasoning, string(input.ToolInput))
 		writeResult("allow", reason, fmt.Sprintf("Classification: %s, network: %v", cls.Level, cls.Network))
 		return
 	}
@@ -173,10 +175,10 @@ func main() {
 	}
 
 	if passthrough {
-		logf("[%4.1fs/%s] passthrough: %s", dur.Seconds(), backend.Name(), detail.String())
+		logf("[%.1fs/%s] passthrough: %s %s: %s", dur.Seconds(), backend.Name(), toolDesc, detail.String(), string(input.ToolInput))
 		return
 	}
-	logf("[%4.1fs/%s] ask: %s", dur.Seconds(), backend.Name(), detail.String())
+	logf("[%.1fs/%s] ask: %s %s: %s", dur.Seconds(), backend.Name(), toolDesc, detail.String(), string(input.ToolInput))
 	writeResult("ask", detail.String(), fmt.Sprintf("Classification: %s, network: %v dst=%s", cls.Level, cls.Network, cls.NetworkDst))
 }
 

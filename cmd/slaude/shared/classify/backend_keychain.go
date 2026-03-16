@@ -22,7 +22,7 @@ type keychainBackend struct {
 	cachedToken string
 }
 
-func (b *keychainBackend) Name() string { return "keychain" }
+func (b *keychainBackend) Name() string { return "api" }
 
 // token extracts the OAuth access token from macOS Keychain.
 func (b *keychainBackend) token() (string, error) {
