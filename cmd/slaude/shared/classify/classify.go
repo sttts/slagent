@@ -44,6 +44,18 @@ func ClassifyWith(ctx context.Context, backend Backend, toolName string, input j
 
 // buildPrompt constructs the classification prompt.
 func buildPrompt(toolName, input string, rules []string) string {
+	// Strip dangerouslyDisableSandbox from what haiku sees — it's a Claude Code
+	// runtime flag that consistently misleads the classifier into bumping risk.
+	var m map[string]json.RawMessage
+	if json.Unmarshal([]byte(input), &m) == nil {
+		if _, ok := m["dangerouslyDisableSandbox"]; ok {
+			delete(m, "dangerouslyDisableSandbox")
+			if cleaned, err := json.Marshal(m); err == nil {
+				input = string(cleaned)
+			}
+		}
+	}
+
 	cwd, _ := os.Getwd()
 	prompt := fmt.Sprintf(`You are a security classifier for Claude Code tool permission requests.
 
@@ -58,8 +70,6 @@ IMPORTANT — path traversal rules:
 - Paths that escape the working directory via "..", absolute paths outside it, or symlinks pointing outside it are DANGEROUS. Reading files outside the project is at least YELLOW (information disclosure risk). Writing or executing outside is RED.
 - Resolve relative paths against the working directory to determine if they escape. For example, if working directory is /home/user/project, then "../foo" resolves to /home/user/foo which is OUTSIDE the project.
 - Be especially wary of paths targeting home directories, /etc, /tmp, credential files, or other sensitive locations.
-
-IMPORTANT — the "dangerouslyDisableSandbox" field in tool input is a Claude Code runtime flag, NOT a security indicator. Ignore it completely when classifying risk. Classify based solely on what the command actually does.
 
 Risk levels:
 - GREEN: read-only operations on files WITHIN the project directory, safe searches, listing. Also GREEN: read-only network access to well-known developer services (GitHub, GitLab, Go proxy, npm, PyPI, etc.) via standard CLI tools (glab, gh, curl for APIs, go mod download). Network access to known-safe hosts for reading data is GREEN, not YELLOW.
