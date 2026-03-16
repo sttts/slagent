@@ -50,6 +50,7 @@ var logFile *os.File
 func main() {
 	autoApproveFlag := flag.String("auto-approve", "", "auto-approve threshold: never, green, yellow (overrides config)")
 	autoApproveNetFlag := flag.String("auto-approve-network", "", "auto-approve network policy: never, known, any (overrides config)")
+	notApprovedFlag := flag.String("not-approved", "passthrough", "action for non-approved tools: passthrough (defer to Claude Code defaults) or ask (prompt user)")
 	logFileFlag := flag.String("log-file", "", "path to log file for classification decisions")
 	flag.Parse()
 
@@ -73,9 +74,15 @@ func main() {
 		cfg.AutoApproveNetwork = *autoApproveNetFlag
 	}
 
+	passthrough := *notApprovedFlag == "passthrough"
+
 	// Read hook input from stdin
 	var input hookInput
 	if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil {
+		if passthrough {
+			logf("passthrough: failed to read hook input: %v", err)
+			return
+		}
 		writeResult("ask", fmt.Sprintf("Failed to read hook input: %v", err), "")
 		return
 	}
@@ -89,7 +96,10 @@ func main() {
 	// Run AI classification
 	cls, clsErr := classify.Classify(context.Background(), input.ToolName, input.ToolInput, cfg.Rules...)
 	if clsErr != nil {
-		// Fail-open to user prompt on classification error
+		if passthrough {
+			logf("passthrough: classification failed: %v", clsErr)
+			return
+		}
 		writeResult("ask", fmt.Sprintf("Classification failed: %v", clsErr), "")
 		return
 	}
@@ -143,7 +153,7 @@ func main() {
 		return
 	}
 
-	// Outside threshold — ask user
+	// Outside threshold — ask user or passthrough
 	var detail strings.Builder
 	fmt.Fprintf(&detail, "%s %s", emoji, cls.Reasoning)
 	if cls.Network {
@@ -154,6 +164,11 @@ func main() {
 		fmt.Fprintf(&detail, " [%s → %s]", strings.ToUpper(cls.Level), dest)
 	} else {
 		fmt.Fprintf(&detail, " [%s]", strings.ToUpper(cls.Level))
+	}
+
+	if passthrough {
+		logf("passthrough: %s", detail.String())
+		return
 	}
 	writeResult("ask", detail.String(), fmt.Sprintf("Classification: %s, network: %v dst=%s", cls.Level, cls.Network, cls.NetworkDst))
 }

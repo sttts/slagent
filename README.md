@@ -291,9 +291,12 @@ Add to `~/.claude/settings.json`:
 |------|-------------|
 | `--auto-approve` | Threshold: `never`, `green`, `yellow` (overrides config) |
 | `--auto-approve-network` | Network policy: `never`, `known`, `any` (overrides config) |
+| `--not-approved` | Action for non-approved tools: `passthrough` (defer to Claude Code defaults, log only — default) or `ask` (prompt user with classification details) |
 | `--log-file` | Append timestamped classification decisions to file |
 
-The hook reads `classifier.yaml` for defaults (thresholds, known hosts, rules). Safe tools (TodoWrite, TaskCreate, etc.) are auto-approved without classification. On classification failure, it falls open to user prompt (never blocks).
+The hook reads `classifier.yaml` for defaults (thresholds, known hosts, rules). Safe tools (TodoWrite, TaskCreate, etc.) are auto-approved without classification.
+
+By default (`--not-approved=passthrough`), the hook only auto-approves safe operations and exits silently for everything else, letting Claude Code's built-in permission system handle it. Classification results are still logged. With `--not-approved=ask`, non-approved operations prompt the user with classification details instead of deferring.
 
 #### Slack approval reactions
 
