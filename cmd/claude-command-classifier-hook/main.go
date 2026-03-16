@@ -89,17 +89,22 @@ func main() {
 
 	// Auto-approve safe tools
 	if safeTools[input.ToolName] {
+		logf("allow: %s (safe tool)", input.ToolName)
 		writeResult("allow", fmt.Sprintf("Auto-approved safe tool: %s", input.ToolName), "")
 		return
 	}
 
 	// Run AI classification
+	t0 := time.Now()
 	cls, clsErr := classify.Classify(context.Background(), input.ToolName, input.ToolInput, cfg.Rules...)
+	dur := time.Since(t0)
+
 	if clsErr != nil {
 		if passthrough {
-			logf("passthrough: classification failed: %v", clsErr)
+			logf("[%4.1fs] passthrough: classification failed: %v", dur.Seconds(), clsErr)
 			return
 		}
+		logf("[%4.1fs] ask: classification failed: %v", dur.Seconds(), clsErr)
 		writeResult("ask", fmt.Sprintf("Classification failed: %v", clsErr), "")
 		return
 	}
@@ -119,7 +124,6 @@ func main() {
 		case "any":
 			networkOK = true
 		case "known":
-			// Check each destination (haiku may return comma-separated hosts)
 			for _, dst := range cls.NetworkDests() {
 				if !knownHosts.MatchRequest(dst, cls.NetworkPath, cls.Method) {
 					networkOK = false
@@ -149,6 +153,7 @@ func main() {
 		} else {
 			reason = fmt.Sprintf("%s %s (%s) %s", emoji, input.ToolName, cls.Level, cls.Reasoning)
 		}
+		logf("[%4.1fs] allow: %s", dur.Seconds(), reason)
 		writeResult("allow", reason, fmt.Sprintf("Classification: %s, network: %v", cls.Level, cls.Network))
 		return
 	}
@@ -167,9 +172,10 @@ func main() {
 	}
 
 	if passthrough {
-		logf("passthrough: %s", detail.String())
+		logf("[%4.1fs] passthrough: %s", dur.Seconds(), detail.String())
 		return
 	}
+	logf("[%4.1fs] ask: %s", dur.Seconds(), detail.String())
 	writeResult("ask", detail.String(), fmt.Sprintf("Classification: %s, network: %v dst=%s", cls.Level, cls.Network, cls.NetworkDst))
 }
 
@@ -181,7 +187,6 @@ func logf(format string, args ...any) {
 }
 
 func writeResult(decision, reason, context string) {
-	logf("%s: %s", decision, reason)
 	out := hookOutput{
 		HookSpecificOutput: hookSpecific{
 			HookEventName:            "PreToolUse",
