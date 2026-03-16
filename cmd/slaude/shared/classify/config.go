@@ -12,7 +12,7 @@ type Config struct {
 	AutoApprove        string        // "never", "green", "yellow"
 	AutoApproveNetwork string        // "never", "known", "any"
 	KnownHosts         *KnownHostSet // nil means use defaults
-	Rules              []string      // extra classification rules appended to the prompt
+	Rules              []string      // extra classification rules appended to the prompt (entries matching LEVEL|...|... go into examples section)
 }
 
 // LoadConfig reads classifier settings from ~/.config/slagent/classifier.yaml.
@@ -69,7 +69,6 @@ func ParseConfigFile(filePath string) Config {
 		case "known-hosts":
 			knownHostLines = append(knownHostLines, trimmed)
 		case "rules":
-			// Parse "- some rule text" entries
 			if strings.HasPrefix(trimmed, "- ") {
 				rule := Unquote(strings.TrimSpace(strings.TrimPrefix(trimmed, "- ")))
 				if rule != "" {
