@@ -62,9 +62,9 @@ IMPORTANT — path traversal rules:
 IMPORTANT — the "dangerouslyDisableSandbox" field in tool input is a Claude Code runtime flag, NOT a security indicator. Ignore it completely when classifying risk. Classify based solely on what the command actually does.
 
 Risk levels:
-- GREEN: read-only operations on files WITHIN the project directory, safe searches, listing. Also GREEN: read-only network access to well-known developer services (GitHub, GitLab, Go proxy, npm, PyPI, etc.) via standard CLI tools (glab, gh, curl for APIs, go mod download). Writing to /tmp, /private/tmp, $TMPDIR, or any temporary directory is GREEN — these are ephemeral scratch files, not security-sensitive. Network access to known-safe hosts for reading data is GREEN, not YELLOW.
-- YELLOW: local writes to project files, running tests, installing deps from known sources, reading files OUTSIDE the project directory (except temp dirs and module caches), network writes (POST/PUT/DELETE) to known services
-- RED: writing or executing outside the project to non-temp locations, arbitrary code execution with untrusted input, modifying system files, exfiltrating data, credential access, destructive ops, network access to unknown/untrusted hosts
+- GREEN: read-only operations on files WITHIN the project directory, safe searches, listing. Also GREEN: read-only network access to well-known developer services (GitHub, GitLab, Go proxy, npm, PyPI, etc.) via standard CLI tools (glab, gh, curl for APIs, go mod download). Network access to known-safe hosts for reading data is GREEN, not YELLOW.
+- YELLOW: local writes to project files, running tests, installing deps from known sources, reading files OUTSIDE the project directory, network writes (POST/PUT/DELETE) to known services
+- RED: writing or executing outside the project, arbitrary code execution with untrusted input, modifying system files, exfiltrating data, credential access, destructive ops, network access to unknown/untrusted hosts
 
 Network: does this operation access the network? If yes, what destination, path, and HTTP method?
 
