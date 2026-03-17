@@ -46,10 +46,19 @@ func ClassifyWith(ctx context.Context, backend Backend, toolName string, input j
 func buildPrompt(toolName, input string, rules []string) string {
 	// Strip dangerouslyDisableSandbox from what haiku sees — it's a Claude Code
 	// runtime flag that consistently misleads the classifier into bumping risk.
+	// Strip Claude Code runtime fields that mislead the classifier.
+	// - dangerouslyDisableSandbox: runtime flag, not a security indicator
+	// - description: Claude's own summary that biases haiku ("mutation", "push")
 	var m map[string]json.RawMessage
 	if json.Unmarshal([]byte(input), &m) == nil {
-		if _, ok := m["dangerouslyDisableSandbox"]; ok {
-			delete(m, "dangerouslyDisableSandbox")
+		changed := false
+		for _, key := range []string{"dangerouslyDisableSandbox", "description"} {
+			if _, ok := m[key]; ok {
+				delete(m, key)
+				changed = true
+			}
+		}
+		if changed {
 			if cleaned, err := json.Marshal(m); err == nil {
 				input = string(cleaned)
 			}
