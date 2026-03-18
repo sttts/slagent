@@ -18,41 +18,41 @@ import (
 //   - "slagent-{id}~act"  — activity message (always skip)
 const slagentBlockPrefix = "slagent-"
 
-// blockKind classifies a slagent block_id.
-type blockKind int
+// BlockKind classifies a slagent block_id.
+type BlockKind int
 
 const (
-	blockNone     blockKind = iota // not a slagent block
-	blockFinal                     // finalized text
-	blockStreaming                 // streaming text (not yet final)
-	blockActivity                  // activity (always skip)
+	BlockNone     BlockKind = iota // not a slagent block
+	BlockFinal                     // finalized text
+	BlockStreaming                 // streaming text (not yet final)
+	BlockActivity                  // activity (always skip)
 )
 
 // classifyBlock returns the kind and instance ID for a block_id.
-func classifyBlock(blockID string) (blockKind, string) {
+func classifyBlock(blockID string) (BlockKind, string) {
 	if !strings.HasPrefix(blockID, slagentBlockPrefix) {
-		return blockNone, ""
+		return BlockNone, ""
 	}
 	rest := blockID[len(slagentBlockPrefix):]
 
 	if strings.HasSuffix(rest, "~act") {
-		return blockActivity, rest[:len(rest)-4]
+		return BlockActivity, rest[:len(rest)-4]
 	}
 	if strings.HasSuffix(rest, "~") {
-		return blockStreaming, rest[:len(rest)-1]
+		return BlockStreaming, rest[:len(rest)-1]
 	}
-	return blockFinal, rest
+	return BlockFinal, rest
 }
 
-// classifyBlocks returns the kind and instance ID of the first slagent block found.
-func classifyBlocks(blocks slackapi.Blocks) (blockKind, string) {
+// ClassifyBlocks returns the kind and instance ID of the first slagent block found.
+func ClassifyBlocks(blocks slackapi.Blocks) (BlockKind, string) {
 	for _, b := range blocks.BlockSet {
 		kind, id := classifyBlock(b.ID())
-		if kind != blockNone {
+		if kind != BlockNone {
 			return kind, id
 		}
 	}
-	return blockNone, ""
+	return BlockNone, ""
 }
 
 // slagentSection wraps text in a section block tagged with this thread's block_id.
@@ -290,13 +290,13 @@ func (t *Thread) FormatHistory(msgs []slackapi.Message) string {
 	var sb strings.Builder
 	for _, msg := range msgs {
 		// Skip activity and streaming messages
-		kind, _ := classifyBlocks(msg.Blocks)
-		if kind == blockActivity || kind == blockStreaming {
+		kind, _ := ClassifyBlocks(msg.Blocks)
+		if kind == BlockActivity || kind == BlockStreaming {
 			continue
 		}
 
 		// Slagent messages: use the text as-is (already has emoji prefix)
-		if kind == blockFinal {
+		if kind == BlockFinal {
 			sb.WriteString(msg.Text)
 			sb.WriteByte('\n')
 			continue

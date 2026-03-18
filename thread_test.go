@@ -26,15 +26,15 @@ func isQuit(msg Message) bool {
 func TestClassifyBlock(t *testing.T) {
 	tests := []struct {
 		blockID    string
-		wantKind   blockKind
+		wantKind   BlockKind
 		wantID     string
 	}{
-		{"slagent-abc123", blockFinal, "abc123"},
-		{"slagent-abc123~", blockStreaming, "abc123"},
-		{"slagent-abc123~act", blockActivity, "abc123"},
-		{"other-block", blockNone, ""},
-		{"", blockNone, ""},
-		{"slagent-", blockFinal, ""},
+		{"slagent-abc123", BlockFinal, "abc123"},
+		{"slagent-abc123~", BlockStreaming, "abc123"},
+		{"slagent-abc123~act", BlockActivity, "abc123"},
+		{"other-block", BlockNone, ""},
+		{"", BlockNone, ""},
+		{"slagent-", BlockFinal, ""},
 	}
 	for _, tt := range tests {
 		kind, id := classifyBlock(tt.blockID)

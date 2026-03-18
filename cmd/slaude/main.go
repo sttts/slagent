@@ -5,11 +5,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strings"
 
 	"github.com/alecthomas/kong"
 	"github.com/mattn/go-isatty"
+	slackapi "github.com/slack-go/slack"
 
 	"github.com/sttts/slagent"
 	"github.com/sttts/slagent/channel"
@@ -28,6 +30,7 @@ var cli struct {
 	Start     StartCmd    `cmd:"" help:"Start a new Slack thread with a Claude session."`
 	Join      JoinCmd     `cmd:"" help:"Join an existing Slack thread with a new slaude instance."`
 	Resume    ResumeCmd   `cmd:"" help:"Resume an existing session in a Slack thread."`
+	Read      ReadCmd     `cmd:"" help:"Read a Slack thread and process with Claude."`
 	Auth      AuthCmd     `cmd:"" help:"Set up Slack credentials."`
 	Default   DefaultCmd  `cmd:"" help:"Set the default workspace."`
 	Channels  ChannelsCmd `cmd:"" help:"List Slack channels and group DMs."`
@@ -291,6 +294,128 @@ func (cmd *ResumeCmd) Run() error {
 	}
 
 	return runSession(cfg)
+}
+
+// ReadCmd reads a Slack thread and processes it with Claude.
+type ReadCmd struct {
+	URL   string   `arg:"" help:"Slack thread URL (DM or group DM only)."`
+	Topic []string `arg:"" optional:"" help:"Instruction for Claude (default: summarize the thread)."`
+}
+
+func (cmd *ReadCmd) Run() error {
+	ch, threadTS, _, _ := parseThreadURL(cmd.URL)
+	if ch == "" || threadTS == "" {
+		return fmt.Errorf("invalid thread URL: %s", cmd.URL)
+	}
+
+	// Only DMs and group DMs are supported
+	if strings.HasPrefix(ch, "C") {
+		return fmt.Errorf("channel threads are not supported — use a DM or group DM URL")
+	}
+
+	if err := credential.Ensure(cli.Workspace, interactiveAuth); err != nil {
+		return err
+	}
+	creds, err := credential.Load(cli.Workspace)
+	if err != nil {
+		return err
+	}
+	sc := slackclient.New(creds.EffectiveToken(), creds.Cookie)
+	sc.SetEnterprise(creds.Enterprise)
+
+	// Fetch all thread replies with pagination
+	var allMsgs []slackapi.Message
+	cursor := ""
+	for {
+		params := &slackapi.GetConversationRepliesParameters{
+			ChannelID: ch,
+			Timestamp: threadTS,
+			Cursor:    cursor,
+		}
+		msgs, hasMore, nextCursor, err := sc.GetConversationReplies(params)
+		if err != nil {
+			return fmt.Errorf("fetch thread: %w", err)
+		}
+		allMsgs = append(allMsgs, msgs...)
+		if !hasMore || nextCursor == "" {
+			break
+		}
+		cursor = nextCursor
+	}
+
+	if len(allMsgs) == 0 {
+		return fmt.Errorf("thread is empty")
+	}
+
+	// Format messages
+	userCache := make(map[string]string)
+	var sb strings.Builder
+	for _, msg := range allMsgs {
+		// Skip activity and streaming slagent messages
+		kind, _ := slagent.ClassifyBlocks(msg.Blocks)
+		if kind == slagent.BlockActivity || kind == slagent.BlockStreaming {
+			continue
+		}
+
+		// Slagent finalized messages: use text as-is
+		if kind == slagent.BlockFinal {
+			sb.WriteString(msg.Text)
+			sb.WriteByte('\n')
+			continue
+		}
+
+		// Skip other bot messages
+		if msg.BotID != "" {
+			continue
+		}
+
+		// Human message
+		user := resolveUser(sc, msg.User, userCache)
+		sb.WriteString("@")
+		sb.WriteString(user)
+		sb.WriteString(": ")
+		sb.WriteString(msg.Text)
+		sb.WriteByte('\n')
+	}
+
+	thread := sb.String()
+	if strings.TrimSpace(thread) == "" {
+		return fmt.Errorf("no readable messages in thread")
+	}
+
+	// Build instruction
+	instruction := "summarize the thread"
+	if topic := strings.Join(cmd.Topic, " "); topic != "" {
+		instruction = topic
+	}
+
+	prompt := fmt.Sprintf("Here is a Slack thread:\n\n%s\n\n%s", thread, instruction)
+
+	// Run claude -p with the prompt
+	claude := exec.Command("claude", "-p", prompt)
+	claude.Stdout = os.Stdout
+	claude.Stderr = os.Stderr
+	return claude.Run()
+}
+
+// resolveUser resolves a Slack user ID to a display name, with caching.
+func resolveUser(sc *slackclient.Client, userID string, cache map[string]string) string {
+	if name, ok := cache[userID]; ok {
+		return name
+	}
+	info, err := sc.GetUserInfo(userID)
+	if err != nil {
+		return userID
+	}
+	name := info.Profile.DisplayName
+	if name == "" {
+		name = info.RealName
+	}
+	if name == "" {
+		name = info.Name
+	}
+	cache[userID] = name
+	return name
 }
 
 // resolveAccessMode resolves the access mode from CLI flags, interactive prompt, or defaults.
