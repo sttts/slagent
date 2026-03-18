@@ -7,7 +7,9 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/alecthomas/kong"
 	"github.com/mattn/go-isatty"
@@ -298,14 +300,15 @@ func (cmd *ResumeCmd) Run() error {
 
 // ReadCmd reads a Slack thread and processes it with Claude.
 type ReadCmd struct {
-	URL   string   `arg:"" help:"Slack thread URL (DM or group DM only)."`
-	Topic []string `arg:"" optional:"" help:"Instruction for Claude (default: summarize the thread)."`
+	URL   string        `arg:"" help:"Slack DM/group DM URL (thread or conversation)."`
+	Topic []string      `arg:"" optional:"" help:"Instruction for Claude (default: summarize the thread)."`
+	Since time.Duration `help:"How far back to read conversation history (default: 24h). Only applies to non-thread URLs." default:"24h"`
 }
 
 func (cmd *ReadCmd) Run() error {
 	ch, threadTS, _, _ := parseThreadURL(cmd.URL)
-	if ch == "" || threadTS == "" {
-		return fmt.Errorf("invalid thread URL: %s", cmd.URL)
+	if ch == "" {
+		return fmt.Errorf("invalid URL: %s", cmd.URL)
 	}
 
 	// Only DMs and group DMs are supported
@@ -323,28 +326,56 @@ func (cmd *ReadCmd) Run() error {
 	sc := slackclient.New(creds.EffectiveToken(), creds.Cookie)
 	sc.SetEnterprise(creds.Enterprise)
 
-	// Fetch all thread replies with pagination
 	var allMsgs []slackapi.Message
-	cursor := ""
-	for {
-		params := &slackapi.GetConversationRepliesParameters{
-			ChannelID: ch,
-			Timestamp: threadTS,
-			Cursor:    cursor,
+
+	if threadTS != "" {
+		// Thread URL — fetch all replies
+		cursor := ""
+		for {
+			params := &slackapi.GetConversationRepliesParameters{
+				ChannelID: ch,
+				Timestamp: threadTS,
+				Cursor:    cursor,
+			}
+			msgs, hasMore, nextCursor, err := sc.GetConversationReplies(params)
+			if err != nil {
+				return fmt.Errorf("fetch thread: %w", err)
+			}
+			allMsgs = append(allMsgs, msgs...)
+			if !hasMore || nextCursor == "" {
+				break
+			}
+			cursor = nextCursor
 		}
-		msgs, hasMore, nextCursor, err := sc.GetConversationReplies(params)
-		if err != nil {
-			return fmt.Errorf("fetch thread: %w", err)
+	} else {
+		// Conversation URL — fetch history with --since window
+		oldest := strconv.FormatInt(time.Now().Add(-cmd.Since).Unix(), 10)
+		cursor := ""
+		for {
+			params := &slackapi.GetConversationHistoryParameters{
+				ChannelID: ch,
+				Oldest:    oldest,
+				Cursor:    cursor,
+			}
+			resp, err := sc.GetConversationHistory(params)
+			if err != nil {
+				return fmt.Errorf("fetch history: %w", err)
+			}
+			allMsgs = append(allMsgs, resp.Messages...)
+			if !resp.HasMore || resp.ResponseMetaData.NextCursor == "" {
+				break
+			}
+			cursor = resp.ResponseMetaData.NextCursor
 		}
-		allMsgs = append(allMsgs, msgs...)
-		if !hasMore || nextCursor == "" {
-			break
+
+		// GetConversationHistory returns newest-first; reverse for chronological order
+		for i, j := 0, len(allMsgs)-1; i < j; i, j = i+1, j-1 {
+			allMsgs[i], allMsgs[j] = allMsgs[j], allMsgs[i]
 		}
-		cursor = nextCursor
 	}
 
 	if len(allMsgs) == 0 {
-		return fmt.Errorf("thread is empty")
+		return fmt.Errorf("no messages found")
 	}
 
 	// Format messages
