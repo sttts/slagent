@@ -351,25 +351,7 @@ func (cmd *ReadCmd) Run() error {
 	userCache := make(map[string]string)
 	var sb strings.Builder
 	for _, msg := range allMsgs {
-		// Skip activity and streaming slagent messages
-		kind, _ := slagent.ClassifyBlocks(msg.Blocks)
-		if kind == slagent.BlockActivity || kind == slagent.BlockStreaming {
-			continue
-		}
-
-		// Slagent finalized messages: use text as-is
-		if kind == slagent.BlockFinal {
-			sb.WriteString(msg.Text)
-			sb.WriteByte('\n')
-			continue
-		}
-
-		// Skip other bot messages
-		if msg.BotID != "" {
-			continue
-		}
-
-		// Human message
+		// Human or bot message
 		user := resolveUser(sc, msg.User, userCache)
 		sb.WriteString("@")
 		sb.WriteString(user)
