@@ -351,7 +351,18 @@ func (cmd *ReadCmd) Run() error {
 	userCache := make(map[string]string)
 	var sb strings.Builder
 	for _, msg := range allMsgs {
-		// Human or bot message
+		// Identify slagent bot messages by block_id
+		kind, instanceID := slagent.ClassifyBlocks(msg.Blocks)
+		if kind != slagent.BlockNone {
+			emoji := slagent.InstanceEmoji(instanceID)
+			sb.WriteString(emoji)
+			sb.WriteString(": ")
+			sb.WriteString(msg.Text)
+			sb.WriteByte('\n')
+			continue
+		}
+
+		// Human message
 		user := resolveUser(sc, msg.User, userCache)
 		sb.WriteString("@")
 		sb.WriteString(user)
