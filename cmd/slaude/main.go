@@ -355,10 +355,7 @@ func (cmd *ReadCmd) Run() error {
 		kind, instanceID := slagent.ClassifyBlocks(msg.Blocks)
 		if kind != slagent.BlockNone {
 			emoji := slagent.InstanceEmoji(instanceID)
-			sb.WriteString(emoji)
-			sb.WriteString(": ")
-			sb.WriteString(msg.Text)
-			sb.WriteByte('\n')
+			fmt.Fprintf(&sb, "Claude Bot %s: %s\n", emoji, msg.Text)
 			continue
 		}
 
