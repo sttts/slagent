@@ -47,6 +47,8 @@ func (cmd *ReadCmd) Run() error {
 
 	if threadTS != "" {
 		// Thread URL — fetch all replies
+		fmt.Fprintf(os.Stderr, "📖 Reading thread...")
+		page := 0
 		cursor := ""
 		for {
 			params := &slackapi.GetConversationRepliesParameters{
@@ -56,17 +58,25 @@ func (cmd *ReadCmd) Run() error {
 			}
 			msgs, hasMore, nextCursor, err := sc.GetConversationReplies(params)
 			if err != nil {
+				fmt.Fprintln(os.Stderr)
 				return fmt.Errorf("fetch thread: %w", err)
 			}
 			allMsgs = append(allMsgs, msgs...)
+			page++
+			if page > 1 {
+				fmt.Fprintf(os.Stderr, "\r📖 Reading thread... %d messages", len(allMsgs))
+			}
 			if !hasMore || nextCursor == "" {
 				break
 			}
 			cursor = nextCursor
 		}
+		fmt.Fprintf(os.Stderr, "\r📖 Read %d messages\033[K\n", len(allMsgs))
 	} else {
 		// Conversation URL — fetch history with --since window
+		fmt.Fprintf(os.Stderr, "📖 Reading conversation (last %s)...", cmd.Since)
 		oldest := strconv.FormatInt(time.Now().Add(-cmd.Since).Unix(), 10)
+		page := 0
 		cursor := ""
 		for {
 			params := &slackapi.GetConversationHistoryParameters{
@@ -76,14 +86,20 @@ func (cmd *ReadCmd) Run() error {
 			}
 			resp, err := sc.GetConversationHistory(params)
 			if err != nil {
+				fmt.Fprintln(os.Stderr)
 				return fmt.Errorf("fetch history: %w", err)
 			}
 			allMsgs = append(allMsgs, resp.Messages...)
+			page++
+			if page > 1 {
+				fmt.Fprintf(os.Stderr, "\r📖 Reading conversation (last %s)... %d messages", cmd.Since, len(allMsgs))
+			}
 			if !resp.HasMore || resp.ResponseMetaData.NextCursor == "" {
 				break
 			}
 			cursor = resp.ResponseMetaData.NextCursor
 		}
+		fmt.Fprintf(os.Stderr, "\r📖 Read %d messages (last %s)\033[K\n", len(allMsgs), cmd.Since)
 
 		// GetConversationHistory returns newest-first; reverse for chronological order
 		for i, j := 0, len(allMsgs)-1; i < j; i, j = i+1, j-1 {
@@ -95,7 +111,8 @@ func (cmd *ReadCmd) Run() error {
 		return fmt.Errorf("no messages found")
 	}
 
-	// Format messages
+	// Resolve user names
+	fmt.Fprintf(os.Stderr, "👤 Resolving users...")
 	userCache := make(map[string]string)
 	var sb strings.Builder
 	for _, msg := range allMsgs {
@@ -115,6 +132,7 @@ func (cmd *ReadCmd) Run() error {
 		sb.WriteString(msg.Text)
 		sb.WriteByte('\n')
 	}
+	fmt.Fprintf(os.Stderr, "\r👤 Resolved %d users\033[K\n", len(userCache))
 
 	thread := sb.String()
 	if strings.TrimSpace(thread) == "" {
@@ -130,6 +148,7 @@ func (cmd *ReadCmd) Run() error {
 	prompt := fmt.Sprintf("Here is a Slack thread:\n\n%s\n\n%s", thread, instruction)
 
 	// Run claude -p with the prompt
+	fmt.Fprintf(os.Stderr, "🤖 Processing with Claude...\n")
 	claude := exec.Command("claude", "-p", prompt)
 	claude.Stdout = os.Stdout
 	claude.Stderr = os.Stderr
