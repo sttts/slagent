@@ -46,10 +46,25 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # goreleaser runs BEFORE the stamp commit so that the release tag
+      # points to HEAD (the feature commit) at the time goreleaser validates
+      # git state. If we ran goreleaser after the stamp commit, HEAD would
+      # have advanced past the tag and goreleaser would error:
+      #   "git tag vX was not made against commit <sha>"
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Stamp plugin version
         run: |
           TAG="${{ steps.tag.outputs.tag }}"
-          # Update version in marketplace.json and plugin.json
+          # Update version in marketplace.json and plugin.json.
+          # This runs after goreleaser so the stamp commit does not advance
+          # HEAD past the release tag (which would break goreleaser validation).
+          # The [skip ci] suffix prevents this push from triggering a new run.
           sed -i "s|\"version\": \".*\"|\"version\": \"${TAG}\"|g" \
             .claude-plugin/marketplace.json \
             plugins/slaude/.claude-plugin/plugin.json
@@ -58,10 +73,3 @@ jobs:
           git add .claude-plugin/marketplace.json plugins/slaude/.claude-plugin/plugin.json
           git diff --cached --quiet || git commit -m "chore: stamp plugin version ${TAG} [skip ci]"
           git push origin master
-
-      - uses: goreleaser/goreleaser-action@v6
-        with:
-          version: "~> v2"
-          args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
