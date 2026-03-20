@@ -1,7 +1,7 @@
 {
   "name": "sttts-slaude",
   "description": "Start, stop, join, resume, and manage Claude Code sessions mirrored to Slack via slaude",
-  "version": "v2026.3.20-alpha.2",
+  "version": "v2026.3.20-alpha.3",
   "author": {
     "name": "Stefan Schimanski",
     "url": "https://github.com/sttts"
