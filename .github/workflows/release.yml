@@ -72,4 +72,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add .claude-plugin/marketplace.json plugins/slaude/.claude-plugin/plugin.json
           git diff --cached --quiet || git commit -m "chore: stamp plugin version ${TAG} [skip ci]"
+          # goreleaser pushes the brew formula update to master before we get here,
+          # so we must rebase over it before pushing the stamp commit.
+          git pull --rebase origin master
           git push origin master
