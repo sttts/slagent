@@ -86,6 +86,18 @@ slaude start -- "refactor the auth module"
 
 Everything after `--` is passed through to the Claude subprocess. This means slaude doesn't need to know about every Claude flag — you control `--permission-mode`, `--resume`, `--system-prompt`, etc. directly.
 
+### Access Modes
+
+Sessions start **locked** (owner-only) by default. Control who can interact:
+
+```bash
+slaude start --locked -c CHANNEL -- "design the API"    # 🔒 owner only (default)
+slaude start --open -c CHANNEL -- "design the API"      # 🔓 everyone can interact
+slaude start --observe -c CHANNEL -- "watch and learn"   # 👀 reads all, responds to owner
+```
+
+Change at runtime from Slack: `:fox_face: /open`, `:fox_face: /open <@user>` (grant one person), `:fox_face: /lock`, `:fox_face: /observe`. See [Thread Access Control](#thread-access-control) for details.
+
 ### Multi-Instance Threads
 
 Multiple slaude instances can share a Slack thread. Each instance gets a unique identity emoji (e.g. 🦊, 🐶). To address a specific instance, use `:shortcode:` prefix:
