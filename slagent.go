@@ -94,11 +94,18 @@ type SandboxToggle struct {
 	Enable       *bool // nil if cancelled/timed out
 }
 
-func (TextMessage) message()    {}
-func (CommandMessage) message() {}
-func (StopMessage) message()    {}
-func (QuitMessage) message()    {}
-func (SandboxToggle) message()  {}
+// FeedbackMessage is local feedback from a handled command (e.g. /open, /lock).
+// Not forwarded to Claude — only shown in terminal.
+type FeedbackMessage struct {
+	Text string // emoji-prefixed feedback (e.g. "🔓 Thread opened for everyone.")
+}
+
+func (TextMessage) message()     {}
+func (CommandMessage) message()  {}
+func (StopMessage) message()     {}
+func (QuitMessage) message()     {}
+func (SandboxToggle) message()   {}
+func (FeedbackMessage) message() {}
 
 // ThreadOption configures a Thread.
 type ThreadOption func(*threadConfig)

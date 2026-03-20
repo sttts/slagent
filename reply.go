@@ -188,6 +188,7 @@ func (t *Thread) pollOnce() ([]Message, error) {
 			handled, feedback := t.handleCommand(msg.User, rest)
 			if feedback != "" {
 				t.Post(t.emoji + " " + feedback)
+				messages = append(messages, FeedbackMessage{Text: t.emoji + " " + feedback})
 			}
 			if handled {
 				t.advanceLastTS(msg.Timestamp)

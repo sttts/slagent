@@ -332,6 +332,8 @@ func (s *Session) feedbackLoop(ctx context.Context) {
 					s.handleSandboxToggle(*result)
 				}
 				_ = m
+			case slagent.FeedbackMessage:
+				s.ui.Info(m.Text)
 			case slagent.CommandMessage:
 				commands = append(commands, m)
 			case slagent.TextMessage:
