@@ -47,9 +47,9 @@ Module: `github.com/sttts/slagent`
 - Before committing, simplify the code. Look deeply at changes.
 
 ## Build
-- ALWAYS build binaries into the repo root after ANY code change: `go build -o slaude ./cmd/slaude/ && go build -o slagent-demo ./cmd/slagent-demo/`
+- ALWAYS build binaries into the repo root after ANY code change: `go build -o slaude ./cmd/slaude/ && go build -o slagent-demo ./cmd/slagent-demo/ && go build -o claude-command-classifier-hook ./cmd/claude-command-classifier-hook/`
+- Build each binary individually. `go build ./...` only checks compilation, it doesn't produce binaries.
 - The user runs `./slaude` from the repo root. If you don't rebuild, they test stale code.
-- Don't just run `go build ./...` — that only checks compilation, it doesn't produce binaries.
 
 ## Testing
 - Table-driven tests for event sequences in `event_sequence_test.go`.
