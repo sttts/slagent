@@ -5,21 +5,21 @@
 class Slaude < Formula
   desc "Claude Code ↔ Slack bridge"
   homepage "https://github.com/sttts/slagent"
-  version "2026.3.20-alpha.0"
+  version "2026.3.20-alpha.1"
   license "MIT"
 
   on_macos do
     if Hardware::CPU.intel?
-      url "https://github.com/sttts/slagent/releases/download/v2026.3.20-alpha.0/slaude_darwin_amd64.tar.gz"
-      sha256 "7090b3cb2dbb8fb948e666c560ce3ae316e81d3ae7112a526ee401b49fc2e8a7"
+      url "https://github.com/sttts/slagent/releases/download/v2026.3.20-alpha.1/slaude_darwin_amd64.tar.gz"
+      sha256 "f998b6495b3606298cb31afc00431affc837a6ebf00bc3ae292422397d02b36c"
 
       define_method(:install) do
         bin.install "slaude"
       end
     end
     if Hardware::CPU.arm?
-      url "https://github.com/sttts/slagent/releases/download/v2026.3.20-alpha.0/slaude_darwin_arm64.tar.gz"
-      sha256 "608897da3325b25e904e74e0d403d9d08c951514e7fe81de8df233efe9e2186d"
+      url "https://github.com/sttts/slagent/releases/download/v2026.3.20-alpha.1/slaude_darwin_arm64.tar.gz"
+      sha256 "06848448f857a3e0b98f1d1652edc805930630f068baf3ad6db754a409991336"
 
       define_method(:install) do
         bin.install "slaude"
@@ -29,15 +29,15 @@ class Slaude < Formula
 
   on_linux do
     if Hardware::CPU.intel? && Hardware::CPU.is_64_bit?
-      url "https://github.com/sttts/slagent/releases/download/v2026.3.20-alpha.0/slaude_linux_amd64.tar.gz"
-      sha256 "b82a84a240d3d5dac79cbeae24911fe91846c2d3566ae0335045bec15586c882"
+      url "https://github.com/sttts/slagent/releases/download/v2026.3.20-alpha.1/slaude_linux_amd64.tar.gz"
+      sha256 "d7588ff89b5ac6776cf7597d3c3be3dc6859113dbd9453783cc7bfc3feb39942"
       define_method(:install) do
         bin.install "slaude"
       end
     end
     if Hardware::CPU.arm? && Hardware::CPU.is_64_bit?
-      url "https://github.com/sttts/slagent/releases/download/v2026.3.20-alpha.0/slaude_linux_arm64.tar.gz"
-      sha256 "b4cca8d9a1586af7bdde51dda7e9b89e31e80fa43f6e3171742ad34f76aca652"
+      url "https://github.com/sttts/slagent/releases/download/v2026.3.20-alpha.1/slaude_linux_arm64.tar.gz"
+      sha256 "118078c9f953eb157e93dde5311d0e8a27b000aa2266c07168f39ccc39c97627"
       define_method(:install) do
         bin.install "slaude"
       end
