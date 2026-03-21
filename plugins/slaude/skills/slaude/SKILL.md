@@ -30,14 +30,15 @@ The version is also injected into the agent's system prompt.
 Start a new Claude Code session mirrored to a Slack thread:
 
 ```bash
-slaude start -c CHANNEL -- "your prompt here"
+slaude start #channel "your prompt here"
+slaude start https://team.slack.com/archives/C123 "your prompt here"
+slaude start @user "your prompt here"
 ```
 
 **Key flags:**
 | Flag | Description |
 |------|-------------|
-| `-c CHANNEL` | Slack channel name or ID (required unless using `-u`) |
-| `-u USER` | DM a user instead of posting to a channel |
+| `[target]` | Positional: Slack URL, `#channel`, `@user`, or channel ID |
 | `--locked` | Lock to owner only (default for `start`) |
 | `--observe` | Observe mode: read all messages, only respond to authorized users |
 | `--open` | Open for all thread participants |
@@ -53,8 +54,8 @@ When no flag is given — interactive terminal prompts `Closed, oBserve, or open
 
 Everything after `--` passes directly to Claude Code. Use this for Claude-specific flags:
 ```bash
-slaude start -c CHANNEL -- --permission-mode plan "design the API"
-slaude start -c CHANNEL -- --model sonnet "quick fix"
+slaude start #channel -- --permission-mode plan "design the API"
+slaude start #channel -- --model sonnet "quick fix"
 ```
 
 **Process management:** `slaude start` runs as a foreground process. It blocks until the session ends. To manage it as a sub-agent:
@@ -187,7 +188,7 @@ When managing slaude sessions as sub-agents from OpenClaw:
 
 ```bash
 # 1. Start session as background process, capture PID
-slaude start -c "$CHANNEL" --open \
+slaude start "$CHANNEL" --open \
   --dangerous-auto-approve green \
   --dangerous-auto-approve-network known \
   -- "$PROMPT" &
@@ -229,7 +230,7 @@ kill -INT $SLAUDE_PID
 
 ```bash
 # Start agent A on backend work
-slaude start -c engineering --open -- "implement the API endpoint for /users" &
+slaude start #engineering --open -- "implement the API endpoint for /users" &
 PID_A=$!
 
 # Start agent B on frontend work in the same thread

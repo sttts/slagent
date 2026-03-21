@@ -54,10 +54,16 @@ slaude auth --manual     # or paste a token manually
 
 ```bash
 # Start a Claude session mirrored to a Slack channel
-slaude start -c CHANNEL -- "design the API"
+slaude start #general "design the API"
+
+# With a Slack URL (workspace auto-detected)
+slaude start https://team.slack.com/archives/C123 "design the API"
+
+# DM a user
+slaude start @alice "review this PR"
 
 # With Claude flags (everything after -- goes to Claude)
-slaude start -c CHANNEL -- --permission-mode plan "refactor the auth module"
+slaude start #general -- --permission-mode plan "refactor the auth module"
 
 # Join an existing Slack thread (new agent instance)
 slaude join https://team.slack.com/archives/C123/p1234567890 "help with tests"
@@ -65,18 +71,15 @@ slaude join https://team.slack.com/archives/C123/p1234567890 "help with tests"
 # Resume a previous session (URL with cursor from exit output)
 slaude resume https://team.slack.com/archives/C123/p1234567890#fox@1700000005.000000 -- --resume SESSION_ID
 
-# DM a user
-slaude start -u alice -- "review this PR"
-
 # No channel? Interactive picker shows available channels
-slaude start -- "refactor the auth module"
+slaude start "refactor the auth module"
 ```
 
 ### Commands
 
 | Command | Description |
 |---------|-------------|
-| `slaude start -c CHANNEL` | Start a new Slack thread with a Claude session |
+| `slaude start [target] [topic]` | Start a new Slack thread (target: URL, #channel, @user, or ID) |
 | `slaude join URL [topic]` | Join an existing thread with a new agent instance |
 | `slaude resume URL#id[@ts]` | Resume a previous session in a Slack thread |
 | `slaude auth` | Set up Slack credentials |
@@ -91,9 +94,9 @@ Everything after `--` is passed through to the Claude subprocess. This means sla
 Sessions start **locked** (owner-only) by default. Control who can interact:
 
 ```bash
-slaude start --locked -c CHANNEL -- "design the API"    # 🔒 owner only (default)
-slaude start --open -c CHANNEL -- "design the API"      # 🔓 everyone can interact
-slaude start --observe -c CHANNEL -- "watch and learn"   # 👀 reads all, responds to owner
+slaude start --locked #general "design the API"    # 🔒 owner only (default)
+slaude start --open #general "design the API"      # 🔓 everyone can interact
+slaude start --observe #general "watch and learn"   # 👀 reads all, responds to owner
 ```
 
 Change at runtime from Slack: `:fox_face: /open`, `:fox_face: /open <@user>` (grant one person), `:fox_face: /lock`, `:fox_face: /observe`. See [Thread Access Control](#thread-access-control) for details.
@@ -137,9 +140,9 @@ Use `/open`, `/lock`, and `/observe` to control access (via `:shortcode:` target
 Three mutually exclusive CLI flags control the initial access mode:
 
 ```bash
-slaude start --locked -c CHANNEL -- "design the API"   # locked (default for start)
-slaude start --observe -c CHANNEL -- "watch and learn"  # observe: read all, respond to owner
-slaude start --open -c CHANNEL -- "design the API"      # open for everyone
+slaude start --locked #general "design the API"   # locked (default for start)
+slaude start --observe #general "watch and learn"  # observe: read all, respond to owner
+slaude start --open #general "design the API"      # open for everyone
 
 slaude join --observe URL "help with tests"             # observe (default for join)
 slaude join --locked URL "review"                       # locked to owner only
@@ -167,7 +170,7 @@ Two independent flags control what gets auto-approved:
 
 ```bash
 # Auto-approve read-only local operations, network to known hosts
-slaude start -c CHANNEL \
+slaude start #general \
   --dangerous-auto-approve green \
   --dangerous-auto-approve-network known \
   -- "refactor the auth module"

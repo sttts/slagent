@@ -44,7 +44,9 @@ cmd/slaude/internal/
 slaude separates its own flags from Claude flags using `--`:
 
 ```bash
-slaude start -c CHANNEL -- --permission-mode plan "topic"
+slaude start #channel -- --permission-mode plan "topic"
+slaude start https://team.slack.com/archives/C123 "topic"
+slaude start @alice "review this PR"
 slaude join https://team.slack.com/archives/C123/p1234567890123456 "topic"
 slaude resume https://team.slack.com/archives/C123/p1234567890123456#abc123@1700000005.000000 -- --resume SESSION_ID
 ```
@@ -53,13 +55,12 @@ slaude resume https://team.slack.com/archives/C123/p1234567890123456#abc123@1700
 
 | Flag | Description |
 |------|-------------|
-| `-c, --channel` | Slack channel name or ID (start only) |
-| `-u, --user` | Slack user(s) for DM (start only) |
 | `-w, --workspace` | Slack workspace URL (uses default if omitted) |
 | `--locked` | Lock to owner only (mutually exclusive with --observe/--open) |
 | `--observe` | Observe mode: read all messages, respond only to owner |
 | `--open` | Open thread for all participants |
 | `--debug` | Write debug logs |
+| `[target]` | Positional: Slack URL, `#channel`, `@user`, or channel ID |
 | `[topic...]` | Positional topic arg |
 
 When no access flag is given:
@@ -72,7 +73,7 @@ controlled by the user directly.
 
 ### Subcommands
 
-- `slaude start` — start a new session mirrored to Slack
+- `slaude start [target] [topic]` — start a new session mirrored to Slack (target: URL, #channel, @user, or ID)
 - `slaude join URL` — join an existing thread with a new slaude instance
 - `slaude resume URL#instanceID@lastTS -- --resume SESSION_ID` — resume an existing session
 - `slaude auth` — extract credentials from Slack desktop app (default), or `--manual` to paste a token
