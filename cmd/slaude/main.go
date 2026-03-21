@@ -419,13 +419,34 @@ func workspaceKey(url string) string {
 	return url
 }
 
-// isSlackID returns true if s looks like a Slack channel/user ID (e.g. C01234, G01234, D01234).
+// workspaceFromURL extracts "team.slack.com" from a Slack permalink URL.
+func workspaceFromURL(u string) string {
+	u = strings.TrimPrefix(u, "https://")
+	u = strings.TrimPrefix(u, "http://")
+	if idx := strings.Index(u, "/"); idx >= 0 {
+		return u[:idx]
+	}
+	return u
+}
+
+// isSlackID returns true if s looks like a Slack channel/user/DM ID
+// (e.g. C01234, G01234, D01234, DCBN5L04R).
 func isSlackID(s string) bool {
 	if len(s) < 2 {
 		return false
 	}
 	prefix := s[0]
-	return (prefix == 'C' || prefix == 'G' || prefix == 'D') && s[1] >= '0' && s[1] <= '9'
+	if prefix != 'C' && prefix != 'G' && prefix != 'D' {
+		return false
+	}
+
+	// Rest must be uppercase alphanumeric
+	for _, c := range s[1:] {
+		if !((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z')) {
+			return false
+		}
+	}
+	return true
 }
 
 func slackProgress(p channel.ListProgress) {
