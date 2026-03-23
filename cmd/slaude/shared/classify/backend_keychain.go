@@ -33,25 +33,40 @@ func (b *keychainBackend) token() (string, error) {
 		return b.cachedToken, nil
 	}
 
-	out, err := exec.Command("security", "find-generic-password", "-s", "Claude Code", "-w").Output()
+	out, err := exec.Command("security", "find-generic-password", "-s", "Claude Code-credentials", "-w").Output()
 	if err != nil {
 		return "", fmt.Errorf("keychain lookup failed: %w", err)
 	}
 
 	raw := bytes.TrimSpace(out)
 
-	// Try JSON format first (OAuth: {"accessToken":"...","expiresAt":"..."})
-	var creds struct {
+	// Try JSON format: {"claudeAiOauth":{"accessToken":"...","expiresAt":EPOCH_MS,...}}
+	var wrapper struct {
+		ClaudeAiOauth struct {
+			AccessToken string `json:"accessToken"`
+			ExpiresAt   int64  `json:"expiresAt"`
+		} `json:"claudeAiOauth"`
+	}
+	if json.Unmarshal(raw, &wrapper) == nil && wrapper.ClaudeAiOauth.AccessToken != "" {
+		if wrapper.ClaudeAiOauth.ExpiresAt > 0 && time.Now().UnixMilli() > wrapper.ClaudeAiOauth.ExpiresAt {
+			return "", fmt.Errorf("OAuth token expired")
+		}
+		b.cachedToken = wrapper.ClaudeAiOauth.AccessToken
+		return b.cachedToken, nil
+	}
+
+	// Legacy format: {"accessToken":"...","expiresAt":"ISO8601"}
+	var legacy struct {
 		AccessToken string `json:"accessToken"`
 		ExpiresAt   string `json:"expiresAt"`
 	}
-	if json.Unmarshal(raw, &creds) == nil && creds.AccessToken != "" {
-		if creds.ExpiresAt != "" {
-			if t, err := time.Parse(time.RFC3339, creds.ExpiresAt); err == nil && time.Now().After(t) {
-				return "", fmt.Errorf("OAuth token expired at %s", creds.ExpiresAt)
+	if json.Unmarshal(raw, &legacy) == nil && legacy.AccessToken != "" {
+		if legacy.ExpiresAt != "" {
+			if t, err := time.Parse(time.RFC3339, legacy.ExpiresAt); err == nil && time.Now().After(t) {
+				return "", fmt.Errorf("OAuth token expired at %s", legacy.ExpiresAt)
 			}
 		}
-		b.cachedToken = creds.AccessToken
+		b.cachedToken = legacy.AccessToken
 		return b.cachedToken, nil
 	}
 
