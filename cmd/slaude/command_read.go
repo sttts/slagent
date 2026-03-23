@@ -28,12 +28,7 @@ func (cmd *ReadCmd) Run() error {
 		return fmt.Errorf("invalid URL: %s", cmd.URL)
 	}
 
-	// Only DMs and group DMs are supported
-	if strings.HasPrefix(ch, "C") {
-		return fmt.Errorf("channel threads are not supported — use a DM or group DM URL")
-	}
-
-	if err := credential.Ensure(cli.Workspace, interactiveAuth); err != nil {
+if err := credential.Ensure(cli.Workspace, interactiveAuth); err != nil {
 		return err
 	}
 	creds, err := credential.Load(cli.Workspace)
