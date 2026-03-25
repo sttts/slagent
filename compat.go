@@ -75,28 +75,65 @@ func (c *compatTurn) logSlack(action, content string) {
 // Converts markdown to Slack mrkdwn format. Uses a section block with the given block_id.
 // The block_id should include the appropriate suffix (~, ~act, or none).
 func textMsgOpts(display, blockID, emoji string, plainText bool) []slackapi.MsgOption {
-	var converted string
+	// Build the formatted text, then split into chunks that fit Slack's
+	// section block limit (3000 chars). Each chunk becomes its own section block.
+	var blocks []slackapi.Block
+	var fullText string
+
 	if plainText {
-		// Plan mode: wrap in code block, no mrkdwn conversion
-		converted = emoji + " 📋\n```\n" + display + "\n```"
+		// Plan mode: wrap in code block, no mrkdwn conversion.
+		// Reserve space for fences + emoji header per chunk.
+		header := emoji + " 📋\n"
+		fenceOverhead := len(header) + len("```\n") + len("\n```")
+		chunks := splitAtLines(display, maxBlockTextLen-fenceOverhead)
+		for i, chunk := range chunks {
+			converted := header + "```\n" + chunk + "\n```"
+			if i > 0 {
+				converted = "```\n" + chunk + "\n```"
+			}
+			section := slackapi.NewSectionBlock(
+				slackapi.NewTextBlockObject("mrkdwn", converted, false, false),
+				nil, nil,
+			)
+			if i == 0 {
+				section.BlockID = blockID
+			} else {
+				section.BlockID = fmt.Sprintf("%s-%d", blockID, i)
+			}
+			blocks = append(blocks, section)
+		}
+		fullText = header + "```\n" + display + "\n```"
 	} else {
 		body := MarkdownToMrkdwn(display)
+
 		// Blockquote every line so bot messages stand out among human messages
 		lines := strings.Split(body, "\n")
 		lines[0] = "> " + emoji + " " + lines[0]
 		for i := 1; i < len(lines); i++ {
 			lines[i] = "> " + lines[i]
 		}
-		converted = strings.Join(lines, "\n")
+		converted := strings.Join(lines, "\n")
+
+		// Split into chunks that fit section block limit
+		chunks := splitAtLines(converted, maxBlockTextLen)
+		for i, chunk := range chunks {
+			section := slackapi.NewSectionBlock(
+				slackapi.NewTextBlockObject("mrkdwn", chunk, false, false),
+				nil, nil,
+			)
+			if i == 0 {
+				section.BlockID = blockID
+			} else {
+				section.BlockID = fmt.Sprintf("%s-%d", blockID, i)
+			}
+			blocks = append(blocks, section)
+		}
+		fullText = converted
 	}
-	section := slackapi.NewSectionBlock(
-		slackapi.NewTextBlockObject("mrkdwn", converted, false, false),
-		nil, nil,
-	)
-	section.BlockID = blockID
+
 	return []slackapi.MsgOption{
-		slackapi.MsgOptionBlocks(section),
-		slackapi.MsgOptionText(converted, false),
+		slackapi.MsgOptionBlocks(blocks...),
+		slackapi.MsgOptionText(fullText, false),
 	}
 }
 
