@@ -96,6 +96,18 @@ func main() {
 		return
 	}
 
+	// EnterPlanMode is safe (just switches to planning); ExitPlanMode needs approval
+	if input.ToolName == "EnterPlanMode" {
+		logf("allow: %s (safe tool): %s", toolDesc, string(input.ToolInput))
+		writeResult("allow", "Auto-approved safe tool: EnterPlanMode", "")
+		return
+	}
+	if input.ToolName == "ExitPlanMode" {
+		logf("ask: %s (plan mode exit must be approved): %s", toolDesc, string(input.ToolInput))
+		writeResult("ask", "Plan mode exit: ExitPlanMode", "")
+		return
+	}
+
 	// Run AI classification
 	backend := classify.DefaultBackend()
 	t0 := time.Now()
