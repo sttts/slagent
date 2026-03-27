@@ -38,14 +38,17 @@ type compatTurn struct {
 	activityTimer   *time.Timer  // debounce timer for activity flush
 	activityDeleted bool         // activity was deleted by text; don't recreate
 
-	// Text streaming
-	textBuf    strings.Builder
-	textTS     string
-	textUpdate time.Time
-	textTimer  *time.Timer // debounce timer for text flush
-	question   bool        // replace trailing ? with ❓ on finish
-	qPrefix    string      // prepended to text on finish (e.g. "@user: ")
-	plainText  bool        // wrap text in code block instead of mrkdwn conversion
+	// Text streaming — progressive message chain.
+	// Frozen messages contain finalized text with block_id.
+	// The last message shows a scrolling tail with streaming block_id (~).
+	textBuf       strings.Builder
+	textFrozenLen int         // bytes of textBuf in frozen (completed) messages
+	textMsgs      []string    // timestamps: frozen messages + current streaming message
+	textUpdate    time.Time
+	textTimer     *time.Timer // debounce timer for text flush
+	question      bool        // replace trailing ? with ❓ on finish
+	qPrefix       string      // prepended to text on finish (e.g. "@user: ")
+	plainText     bool        // wrap text in code block instead of mrkdwn conversion
 
 	mu sync.Mutex
 }
@@ -69,72 +72,6 @@ func (c *compatTurn) logSlack(action, content string) {
 		return
 	}
 	fmt.Fprintf(c.slackLog, "[slack] %s: %s\n", action, content)
-}
-
-// textMsgOpts returns message options for a text message with emoji prefix.
-// Converts markdown to Slack mrkdwn format. Uses a section block with the given block_id.
-// The block_id should include the appropriate suffix (~, ~act, or none).
-func textMsgOpts(display, blockID, emoji string, plainText bool) []slackapi.MsgOption {
-	// Build the formatted text, then split into chunks that fit Slack's
-	// section block limit (3000 chars). Each chunk becomes its own section block.
-	var blocks []slackapi.Block
-	var fullText string
-
-	if plainText {
-		// Plan mode: wrap in code block, no mrkdwn conversion.
-		// Reserve space for fences + emoji header per chunk.
-		header := emoji + " 📋\n"
-		fenceOverhead := len(header) + len("```\n") + len("\n```")
-		chunks := splitAtLines(display, maxBlockTextLen-fenceOverhead)
-		for i, chunk := range chunks {
-			converted := header + "```\n" + chunk + "\n```"
-			if i > 0 {
-				converted = "```\n" + chunk + "\n```"
-			}
-			section := slackapi.NewSectionBlock(
-				slackapi.NewTextBlockObject("mrkdwn", converted, false, false),
-				nil, nil,
-			)
-			if i == 0 {
-				section.BlockID = blockID
-			} else {
-				section.BlockID = fmt.Sprintf("%s-%d", blockID, i)
-			}
-			blocks = append(blocks, section)
-		}
-		fullText = header + "```\n" + display + "\n```"
-	} else {
-		body := MarkdownToMrkdwn(display)
-
-		// Blockquote every line so bot messages stand out among human messages
-		lines := strings.Split(body, "\n")
-		lines[0] = "> " + emoji + " " + lines[0]
-		for i := 1; i < len(lines); i++ {
-			lines[i] = "> " + lines[i]
-		}
-		converted := strings.Join(lines, "\n")
-
-		// Split into chunks that fit section block limit
-		chunks := splitAtLines(converted, maxBlockTextLen)
-		for i, chunk := range chunks {
-			section := slackapi.NewSectionBlock(
-				slackapi.NewTextBlockObject("mrkdwn", chunk, false, false),
-				nil, nil,
-			)
-			if i == 0 {
-				section.BlockID = blockID
-			} else {
-				section.BlockID = fmt.Sprintf("%s-%d", blockID, i)
-			}
-			blocks = append(blocks, section)
-		}
-		fullText = converted
-	}
-
-	return []slackapi.MsgOption{
-		slackapi.MsgOptionBlocks(blocks...),
-		slackapi.MsgOptionText(fullText, false),
-	}
 }
 
 // renderActivity builds the activity message content from thinking + activity lines,
@@ -389,7 +326,7 @@ func (c *compatTurn) writeText(text string) {
 	c.textBuf.WriteString(text)
 
 	// Throttle updates to 1/sec
-	if c.textTS != "" && time.Since(c.textUpdate) < time.Duration(compatThrottleMs)*time.Millisecond {
+	if len(c.textMsgs) > 0 && time.Since(c.textUpdate) < time.Duration(compatThrottleMs)*time.Millisecond {
 		// Schedule a debounce flush: if no further event within 1s, flush
 		c.scheduleFlush()
 		return
@@ -400,28 +337,128 @@ func (c *compatTurn) writeText(text string) {
 }
 
 // postText posts or updates the text message with current buffer content.
-// Uses streaming block_id suffix (~) to indicate the message is not yet final.
+const (
+	// maxRawChunkLen is the raw text limit per message before formatting.
+	// Formatted text (with "> " prefix, emoji, fences) must fit in maxBlockTextLen (3000).
+	maxRawChunkLen = 2500
+
+	// streamingTailLines is how many lines to show in the scrolling tail.
+	streamingTailLines = 6
+)
+
+// postText progressively freezes text into messages and shows a scrolling tail.
+// Each frozen message uses a section block with block_id for poller identification.
 // Must be called with lock held.
 func (c *compatTurn) postText() {
 	full := c.textBuf.String()
+	current := full[c.textFrozenLen:]
 
-	// While streaming, use ~ suffix so pollers know this message isn't final
+	// Freeze chunks when current portion exceeds the raw limit
+	for len(current) > maxRawChunkLen {
+		cut := strings.LastIndex(current[:maxRawChunkLen], "\n")
+		if cut <= 0 {
+			cut = maxRawChunkLen
+		} else {
+			cut++
+		}
+		frozen := current[:cut]
+		c.freezeMessage(frozen)
+		c.textFrozenLen += cut
+		current = full[c.textFrozenLen:]
+	}
+
+	// Show the tail of the current (unfrozen) portion
+	lines := strings.Split(current, "\n")
+	display := current
+	if len(lines) > streamingTailLines {
+		display = strings.Join(lines[len(lines)-streamingTailLines:], "\n")
+	}
+	converted := formatText(display, c.emoji, c.plainText)
+
 	streamBlockID := c.blockID + "~"
-	opts := textMsgOpts(full, streamBlockID, c.emoji, c.plainText)
+	section := slackapi.NewSectionBlock(
+		slackapi.NewTextBlockObject("mrkdwn", converted, false, false),
+		nil, nil,
+	)
+	section.BlockID = streamBlockID
+	opts := []slackapi.MsgOption{
+		slackapi.MsgOptionBlocks(section),
+		slackapi.MsgOptionText(converted, false),
+	}
 
-	converted := c.emoji + " " + MarkdownToMrkdwn(full)
-	if c.textTS == "" {
-		c.logSlack("postMessage(text)", converted)
+	lastTS := c.lastTextTS()
+	if lastTS == "" {
+		c.logSlack("postMessage(text)", converted[:min(60, len(converted))])
 		allOpts := append(opts, slackapi.MsgOptionTS(c.threadTS))
-		_, ts, err := c.api.PostMessage(c.channel, allOpts...)
-		if err == nil {
-			c.textTS = ts
+		if _, ts, err := c.api.PostMessage(c.channel, allOpts...); err == nil {
+			c.textMsgs = append(c.textMsgs, ts)
 		}
 	} else {
-		c.logSlack("updateMessage(text)", converted)
-		c.api.UpdateMessage(c.channel, c.textTS, opts...)
+		c.logSlack("updateMessage(text)", converted[:min(60, len(converted))])
+		c.api.UpdateMessage(c.channel, lastTS, opts...)
 	}
 	c.textUpdate = time.Now()
+}
+
+// freezeMessage finalizes the current streaming message with the given text,
+// then appends an empty slot so the next postText creates a new message.
+func (c *compatTurn) freezeMessage(text string) {
+	converted := formatText(text, c.emoji, c.plainText)
+	frozenBlockID := fmt.Sprintf("%s-%d", c.blockID, len(c.textMsgs))
+	section := slackapi.NewSectionBlock(
+		slackapi.NewTextBlockObject("mrkdwn", converted, false, false),
+		nil, nil,
+	)
+	section.BlockID = frozenBlockID
+	opts := []slackapi.MsgOption{
+		slackapi.MsgOptionBlocks(section),
+		slackapi.MsgOptionText(converted, false),
+	}
+
+	lastTS := c.lastTextTS()
+	if lastTS != "" {
+		c.logSlack("updateMessage(text/freeze)", converted[:min(60, len(converted))])
+		c.api.UpdateMessage(c.channel, lastTS, opts...)
+	} else {
+		c.logSlack("postMessage(text/freeze)", converted[:min(60, len(converted))])
+		allOpts := append(opts, slackapi.MsgOptionTS(c.threadTS))
+		if _, ts, err := c.api.PostMessage(c.channel, allOpts...); err == nil {
+			c.textMsgs = append(c.textMsgs, ts)
+		}
+	}
+	// Next postText will create a fresh message
+	c.textMsgs = append(c.textMsgs, "")
+}
+
+// lastTextTS returns the timestamp of the last text message, or "".
+func (c *compatTurn) lastTextTS() string {
+	if len(c.textMsgs) == 0 {
+		return ""
+	}
+	return c.textMsgs[len(c.textMsgs)-1]
+}
+
+// formatText converts raw text to the slagent blockquote convention.
+// Every line starts with "> "; first line is "> :emoji: ...".
+// This convention is how the poller identifies slagent messages.
+func formatText(display, emoji string, plainText bool) string {
+	if plainText {
+		escaped := strings.ReplaceAll(display, "```", "'''")
+		body := emoji + " 📋\n```\n" + escaped + "\n```"
+		lines := strings.Split(body, "\n")
+		for i := range lines {
+			lines[i] = "> " + lines[i]
+		}
+		return strings.Join(lines, "\n")
+	}
+
+	body := MarkdownToMrkdwn(display)
+	lines := strings.Split(body, "\n")
+	lines[0] = "> " + emoji + " " + lines[0]
+	for i := 1; i < len(lines); i++ {
+		lines[i] = "> " + lines[i]
+	}
+	return strings.Join(lines, "\n")
 }
 
 // scheduleFlush starts a debounce timer that flushes text after 1s.
@@ -496,23 +533,35 @@ func (c *compatTurn) finish() error {
 		}
 	}
 
-	// Update existing text message with full content — use final block_id (no suffix)
-	opts := textMsgOpts(finalText, c.blockID, c.emoji, c.plainText)
-	finalConverted := c.emoji + " " + MarkdownToMrkdwn(finalText)
+	// Finalize the last streaming message with its remaining unfrozen content.
+	// Frozen messages are already posted with their final content.
+	unfrozen := finalText[c.textFrozenLen:]
+	converted := formatText(unfrozen, c.emoji, c.plainText)
 
-	// If activity is below the text message, delete old text and repost below activity
-	// so the final order is: activity (tools), then text.
-	if c.textTS != "" && c.activityTS != "" && c.textTS < c.activityTS {
-		c.logSlack("deleteMessage(text/repost)", c.textTS)
-		c.api.DeleteMessage(c.channel, c.textTS)
-		c.textTS = ""
+	finalBlockID := c.blockID
+	section := slackapi.NewSectionBlock(
+		slackapi.NewTextBlockObject("mrkdwn", converted, false, false),
+		nil, nil,
+	)
+	section.BlockID = finalBlockID
+	opts := []slackapi.MsgOption{
+		slackapi.MsgOptionBlocks(section),
+		slackapi.MsgOptionText(converted, false),
 	}
 
-	if c.textTS != "" {
-		c.logSlack("updateMessage(text/final)", finalConverted)
-		c.api.UpdateMessage(c.channel, c.textTS, opts...)
+	// If activity is below text, delete the first text message so it reposts after activity
+	if len(c.textMsgs) > 0 && c.textMsgs[0] != "" && c.activityTS != "" && c.textMsgs[0] < c.activityTS {
+		c.logSlack("deleteMessage(text/reorder)", c.textMsgs[0])
+		c.api.DeleteMessage(c.channel, c.textMsgs[0])
+		c.textMsgs[0] = ""
+	}
+
+	lastTS := c.lastTextTS()
+	if lastTS != "" {
+		c.logSlack("updateMessage(text/final)", converted[:min(60, len(converted))])
+		c.api.UpdateMessage(c.channel, lastTS, opts...)
 	} else {
-		c.logSlack("postMessage(text/final)", finalConverted)
+		c.logSlack("postMessage(text/final)", converted[:min(60, len(converted))])
 		allOpts := append(opts, slackapi.MsgOptionTS(c.threadTS))
 		_, _, err := c.api.PostMessage(c.channel, allOpts...)
 		if err != nil {
