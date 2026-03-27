@@ -43,6 +43,7 @@ type compatTurn struct {
 	// The last message shows a scrolling tail with streaming block_id (~).
 	textBuf       strings.Builder
 	textFrozenLen int         // bytes of textBuf in frozen (completed) messages
+	textPrefix    string      // prepended to next chunk (e.g. "```\n" to reopen a code fence)
 	textMsgs      []string    // timestamps: frozen messages + current streaming message
 	textUpdate    time.Time
 	textTimer     *time.Timer // debounce timer for text flush
@@ -353,7 +354,9 @@ func (c *compatTurn) postText() {
 	full := c.textBuf.String()
 	current := full[c.textFrozenLen:]
 
-	// Freeze chunks when current portion exceeds the raw limit
+	// Freeze chunks when current portion exceeds the raw limit.
+	// Track code fences: if we split inside a ``` block, close it in the
+	// frozen chunk and reopen in the next.
 	for len(current) > maxRawChunkLen {
 		cut := strings.LastIndex(current[:maxRawChunkLen], "\n")
 		if cut <= 0 {
@@ -361,28 +364,41 @@ func (c *compatTurn) postText() {
 		} else {
 			cut++
 		}
-		frozen := current[:cut]
+
+		// Prepend reopening fence from previous split
+		frozen := c.textPrefix + current[:cut]
+
+		// Check if the frozen chunk has an unclosed code fence
+		if hasUnclosedFence(frozen) {
+			frozen += "```\n"
+			c.textPrefix = "```\n"
+		} else {
+			c.textPrefix = ""
+		}
+
 		c.freezeMessage(frozen)
 		c.textFrozenLen += cut
 		current = full[c.textFrozenLen:]
 	}
 
-	// Show the tail of the current (unfrozen) portion
+	// Show the tail of the current (unfrozen) portion.
+	// Prepend code fence prefix if we split inside a code block.
+	// Append closing fence if the tail has an unclosed one.
 	lines := strings.Split(current, "\n")
 	display := current
 	if len(lines) > streamingTailLines {
 		display = strings.Join(lines[len(lines)-streamingTailLines:], "\n")
 	}
+	display = c.textPrefix + display
+	if hasUnclosedFence(display) {
+		display += "\n```"
+	}
 	converted := formatText(display, c.emoji, c.plainText)
 
 	streamBlockID := c.blockID + "~"
-	section := slackapi.NewSectionBlock(
-		slackapi.NewTextBlockObject("mrkdwn", converted, false, false),
-		nil, nil,
-	)
-	section.BlockID = streamBlockID
+	blocks := textBlocks(display, streamBlockID, c.emoji, c.plainText)
 	opts := []slackapi.MsgOption{
-		slackapi.MsgOptionBlocks(section),
+		slackapi.MsgOptionBlocks(blocks...),
 		slackapi.MsgOptionText(converted, false),
 	}
 
@@ -405,13 +421,9 @@ func (c *compatTurn) postText() {
 func (c *compatTurn) freezeMessage(text string) {
 	converted := formatText(text, c.emoji, c.plainText)
 	frozenBlockID := fmt.Sprintf("%s-%d", c.blockID, len(c.textMsgs))
-	section := slackapi.NewSectionBlock(
-		slackapi.NewTextBlockObject("mrkdwn", converted, false, false),
-		nil, nil,
-	)
-	section.BlockID = frozenBlockID
+	blocks := textBlocks(text, frozenBlockID, c.emoji, c.plainText)
 	opts := []slackapi.MsgOption{
-		slackapi.MsgOptionBlocks(section),
+		slackapi.MsgOptionBlocks(blocks...),
 		slackapi.MsgOptionText(converted, false),
 	}
 
@@ -443,22 +455,62 @@ func (c *compatTurn) lastTextTS() string {
 // This convention is how the poller identifies slagent messages.
 func formatText(display, emoji string, plainText bool) string {
 	if plainText {
+		// Plan mode: quoted header + code block. The > on the opening fence
+		// makes the code block appear inside a blockquote in Slack mrkdwn.
 		escaped := strings.ReplaceAll(display, "```", "'''")
-		body := emoji + " 📋\n```\n" + escaped + "\n```"
-		lines := strings.Split(body, "\n")
-		for i := range lines {
-			lines[i] = "> " + lines[i]
-		}
-		return strings.Join(lines, "\n")
+		return "> " + emoji + " 📋\n> ```\n" + escaped + "\n```"
 	}
 
 	body := MarkdownToMrkdwn(display)
 	lines := strings.Split(body, "\n")
-	lines[0] = "> " + emoji + " " + lines[0]
-	for i := 1; i < len(lines); i++ {
-		lines[i] = "> " + lines[i]
+
+	// Blockquote all lines, but skip > inside code fences.
+	// Opening ``` gets >, content and closing ``` do not.
+	inCode := false
+	for i, line := range lines {
+		if strings.HasPrefix(line, "```") {
+			if !inCode {
+				// Opening fence: quote it, then enter code mode
+				if i == 0 {
+					lines[i] = "> " + emoji + " " + line
+				} else {
+					lines[i] = "> " + line
+				}
+				inCode = true
+			} else {
+				// Closing fence: no quote
+				inCode = false
+			}
+			continue
+		}
+		if inCode {
+			continue // no > prefix inside code block
+		}
+		if i == 0 {
+			lines[i] = "> " + emoji + " " + line
+		} else {
+			lines[i] = "> " + line
+		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+// textBlocks returns the Slack block for a text message.
+// Uses a section block with mrkdwn (both normal and plan mode).
+func textBlocks(display, blockID, emoji string, plainText bool) []slackapi.Block {
+	converted := formatText(display, emoji, plainText)
+	section := slackapi.NewSectionBlock(
+		slackapi.NewTextBlockObject("mrkdwn", converted, false, false),
+		nil, nil,
+	)
+	section.BlockID = blockID
+	return []slackapi.Block{section}
+}
+
+// hasUnclosedFence returns true if the text has an odd number of ``` fences,
+// meaning a code block is open and needs closing.
+func hasUnclosedFence(text string) bool {
+	return strings.Count(text, "```")%2 != 0
 }
 
 // scheduleFlush starts a debounce timer that flushes text after 1s.
@@ -535,17 +587,14 @@ func (c *compatTurn) finish() error {
 
 	// Finalize the last streaming message with its remaining unfrozen content.
 	// Frozen messages are already posted with their final content.
-	unfrozen := finalText[c.textFrozenLen:]
+	// Prepend code fence prefix if we split inside a code block.
+	unfrozen := c.textPrefix + finalText[c.textFrozenLen:]
 	converted := formatText(unfrozen, c.emoji, c.plainText)
 
 	finalBlockID := c.blockID
-	section := slackapi.NewSectionBlock(
-		slackapi.NewTextBlockObject("mrkdwn", converted, false, false),
-		nil, nil,
-	)
-	section.BlockID = finalBlockID
+	blocks := textBlocks(unfrozen, finalBlockID, c.emoji, c.plainText)
 	opts := []slackapi.MsgOption{
-		slackapi.MsgOptionBlocks(section),
+		slackapi.MsgOptionBlocks(blocks...),
 		slackapi.MsgOptionText(converted, false),
 	}
 

@@ -233,6 +233,11 @@ func (s *Session) handleToolUse(tt *toolTracker, evt *claude.Event) {
 			tt.Clear()
 		} else if evt.ToolName == "EnterPlanMode" || evt.ToolName == "ExitPlanMode" {
 			tt.SplitTurn()
+			// Plan text streams AFTER EnterPlanMode, so the new turn is plain text.
+			// After ExitPlanMode, the new turn is back to normal mrkdwn.
+			if tt.turn != nil {
+				tt.turn.SetPlainText(evt.ToolName == "EnterPlanMode")
+			}
 			s.approvePlanModeTransition(evt.ToolName == "EnterPlanMode", evt.ToolInput)
 		} else if evt.ToolName == "AskUserQuestion" {
 			if hasQuestionsFormat(evt.ToolInput) {
